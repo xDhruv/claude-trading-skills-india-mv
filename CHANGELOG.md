@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.1 — 2026-11-24
+
+- Windows installer: `agent/windows/install.ps1` creates a scheduled task that starts the agent at logon and
+  restarts it, and `run.ps1` keeps Windows from idle-sleeping while it runs. Guide: `docs/nse-agent-windows.md`.
+
 ## 1.8.0 — 2026-11-24
 
 - Strategy brain for the F&O desk. It now reads chart patterns from about 2 years of daily bars (trend

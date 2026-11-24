@@ -56,6 +56,9 @@ minute-by-minute day and every alert type, is in [nse-agent-mac.md](nse-agent-ma
 the Mac is on and awake with the lid open (or on power with a display attached); if the Mac sleeps, it
 simply catches up on the next tick without re-sending.
 
+**A2. A Windows PC.** Same idea: run `powershell -ExecutionPolicy Bypass -File agent\windows\install.ps1`,
+which creates a scheduled task. See [nse-agent-windows.md](nse-agent-windows.md).
+
 **B. GitHub Actions (no computer needed).** Push this repo (private is fine), then in Settings, Secrets and
 variables, Actions, add `SMTP_USER`, `SMTP_APP_PASSWORD`, `EMAIL_TO` and optionally `GEMINI_API_KEY`,
 `CAPITAL`, `RISK_PCT`, `WATCHLIST`, `HOLDINGS`. The workflow

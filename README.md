@@ -59,7 +59,8 @@ That guide also covers the **futures & options desk** (live option chain, OI and
 buy/sell verdict, chart-pattern, historical-analog and news reading, the strategies from NSE's option
 strategies booklet with payoff charts, and a local `nse-fno` MCP server for Claude). F&O data comes from your free Angel One
 SmartAPI when configured, with NSE's website as the fallback. On a Mac, `bash agent/mac/install.sh` sets it
-up to run by itself; see [docs/nse-agent-mac.md](docs/nse-agent-mac.md).
+up to run by itself; see [docs/nse-agent-mac.md](docs/nse-agent-mac.md). On Windows, use
+`agent\windows\install.ps1`; see [docs/nse-agent-windows.md](docs/nse-agent-windows.md).
 
 **2. Optionally connect your broker** for live data:
 
