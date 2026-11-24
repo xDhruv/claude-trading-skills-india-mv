@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.6.0 — 2026-11-24
+
+- Futures & options desk for the agent and for Claude. `agent/nse_agent/fno_*`: live option chains,
+  futures and open-interest data from NSE's public website endpoints (no login, no key, free), a
+  deterministic verdict (bullish, bearish, neutral or conflicted) from price trend, futures OI buildup,
+  PCR, OI walls, near-the-money OI flow, max pain, basis, tape, relative strength and news, and a
+  defined-risk trade plan (long option, debit spread or credit spread chosen from implied vs realised
+  volatility; futures shown as an alternative) with strikes, lots sized to your risk, stop, target, costs,
+  break-even and Greeks. Never suggests naked option selling. Every email carries an evidence tree.
+- The agent scans F&O every 20 min from 09:50, emails an F&O pulse and any actionable idea, tracks it
+  through the underlying (long and short), and answers `[NSE Ask] fno NIFTY`. `python -m nse_agent fno NIFTY`
+  prints the same view.
+- `nse-fno` stdio MCP server (`python -m nse_agent.fno_mcp`, registered in `.mcp.json`) with `fno_view`,
+  `fno_option_chain`, `fno_futures` and `fno_oi_spurts` for Claude.
+- Source caveat: NSE has no free official F&O MCP, so this reads the same JSON the nseindia.in website
+  uses. It is unofficial, delayed, personal-use only and may change; GitHub Actions IPs are often blocked.
+
 ## 1.5.0 — 2026-11-24
 
 - `agent/`: a standalone, stdlib-only Python agent that runs through market hours without Claude. It

@@ -2,16 +2,39 @@
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 
-from . import analysis, clock, llm, news, render
+from . import analysis, clock, fno_render, llm, news, render
+from .fno_data import INDEX_SYMBOLS, FnoError, NseFno
+from .fno_service import FnoService
 from .nse import Bar, NseData, McpError
 
 log = logging.getLogger("nse_agent")
 SPLIT_WORDS = ("split", "bonus", "demerger", "spin", "consolidation", "arrangement", "amalgamation")
+FNO_ERRORS = (FnoError, McpError, KeyError, TypeError, ValueError)
 
 
 class Agent:
-    def __init__(self, cfg, data: NseData, mailer, state):
+    def __init__(self, cfg, data: NseData, mailer, state, fno: NseFno | None = None):
         self.cfg, self.data, self.mailer, self.state = cfg, data, mailer, state
+        self._fno_client, self._fno_service = fno, None
+
+    def fno_service(self) -> FnoService:
+        if self._fno_service is None:
+            self._fno_client = self._fno_client or NseFno()
+            self._fno_service = FnoService(self.cfg, self._fno_client, self.data)
+        return self._fno_service
+
+    def fno_view(self, symbol: str, now: datetime, tone: str | None = None):
+        """Full F&O view for one underlying, with whatever live context the cash feeds can add."""
+        vix = vix_pct = None
+        try:
+            q = self.data.index_quote("INDIA VIX")
+            vix, vix_pct = q.last, q.pct
+        except FNO_ERRORS:
+            pass
+        tone = tone or self.state.data["context"].get("tone")
+        negative = tuple(i.title for i in news.symbol_news(symbol, now) if news.is_negative(i)) \
+            if symbol not in INDEX_SYMBOLS else ()
+        return self.fno_service().view(symbol, now, tone, vix, vix_pct, negative)
 
     # ---- email -----------------------------------------------------------------------------
     def email(self, subject: str, body: str, reply_to: str | None = None) -> str | None:
@@ -69,7 +92,7 @@ class Agent:
         return [Bar(*r) for r in entry["bars"]]
 
     def symbols_of_interest(self) -> list[str]:
-        active = [i["symbol"] for i in self.state.data["ideas"].values()]
+        active = [i["symbol"] for i in self.state.data["ideas"].values() if i.get("kind") != "fno"]
         return list(dict.fromkeys([*self.cfg.watchlist, *self.cfg.holdings, *active]))
 
     # ---- the main entry ---------------------------------------------------------------------
@@ -129,6 +152,11 @@ class Agent:
             st.mark("scan", now)
             if self.scan(now, nifty, vix, mood):
                 done.append("scan")
+        if (cfg.fno_enabled and time(9, 50) <= now.time() <= time(14, 45)
+                and st.due("fno", now, cfg.fno_interval_min)):
+            st.mark("fno", now)
+            if self.fno_scan(now, mood):
+                done.append("fno")
         return done
 
     def market_alerts(self, now, nifty, vix, mood) -> bool:
@@ -211,7 +239,7 @@ class Agent:
             p["news"] = [i.title[:90] for i in headlines[:2]]
             ideas.append((hit.metrics.get("vol_ratio", 0), p))
         ideas.sort(key=lambda x: -x[0])
-        room = max(0, cfg.max_ideas_per_day - len(st.data["ideas"]))
+        room = max(0, cfg.max_ideas_per_day - sum(1 for i in st.data["ideas"].values() if i.get("kind") != "fno"))
         chosen = [p for _, p in ideas[: min(cfg.max_ideas_per_scan, room)]]
         if not (chosen or watch or alerts):
             return False
@@ -226,47 +254,129 @@ class Agent:
 
     # ---- tracking ---------------------------------------------------------------------------
     def track(self, now: datetime) -> bool:
-        events = []
+        events, fno_events = [], []
         for idea in self.state.data["ideas"].values():
             if idea["status"] not in ("pending", "triggered"):
                 continue
+            fno = idea.get("kind") == "fno"
             try:
-                price = self.data.stock_quote(idea["symbol"]).ltp
+                if fno and idea.get("index_name"):
+                    price = self.data.index_quote(idea["index_name"]).last
+                else:
+                    price = self.data.stock_quote(idea["symbol"]).ltp
             except (McpError, KeyError, TypeError, ValueError):
                 continue
             ev = self.advance(idea, price, now)
             if ev:
-                events.append((idea, ev, price))
-        if not events:
-            return False
-        self.email(f"[NSE Desk] Update: {', '.join(sorted({i['symbol'] for i, _, _ in events}))}",
-                   render.render_updates(events, now), reply_to=events[0][0].get("msgid"))
-        return True
+                (fno_events if fno else events).append((idea, ev, price))
+        sent = False
+        if events:
+            self.email(f"[NSE Desk] Update: {', '.join(sorted({i['symbol'] for i, _, _ in events}))}",
+                       render.render_updates(events, now), reply_to=events[0][0].get("msgid"))
+            sent = True
+        if fno_events:
+            body = "\n\n".join(fno_render.render_update(i, ev, p, now) for i, ev, p in fno_events)
+            self.email(f"[NSE Desk] F&O update: {', '.join(sorted({i['symbol'] for i, _, _ in fno_events}))}",
+                       body + "\n\n" + fno_render.FNO_WARNING, reply_to=fno_events[0][0].get("msgid"))
+            sent = True
+        return sent
 
     @staticmethod
     def advance(idea: dict, price: float, now: datetime) -> str | None:
+        """Move an idea through pending -> triggered -> target/stopped. Short ideas mirror the long logic."""
+        sign = -1 if idea.get("side") == "short" else 1
+        price, entry, stop, target = (sign * v for v in (price, idea["entry"], idea["stop"], idea["target"]))
         late = idea["horizon"] == "intraday" and now.time() >= time(15, 15)
         if idea["status"] == "pending":
-            if price <= idea["stop"]:
+            if price <= stop:
                 idea["status"] = "invalidated"
                 return "invalidated"
-            if price >= idea["entry"]:
+            if price >= entry:
                 idea["status"] = "triggered"
                 return "triggered"
             if late:
                 idea["status"] = "expired"
                 return "expired"
         elif idea["status"] == "triggered":
-            if price >= idea["target"]:
+            if price >= target:
                 idea["status"] = "target_hit"
                 return "target"
-            if price <= idea["stop"]:
+            if price <= stop:
                 idea["status"] = "stopped"
                 return "stopped"
             if late and not idea.get("reminded"):
                 idea["reminded"] = True
                 return "exit_reminder"
         return None
+
+    # ---- futures & options ------------------------------------------------------------------
+    def fno_stock_picks(self, svc: FnoService) -> list[str]:
+        """Stocks whose futures+options open interest moved most today, limited to your own watchlist and holdings."""
+        cfg = self.cfg
+        mine = set(cfg.watchlist) | set(cfg.holdings)
+        rows = [(abs(r["pct"]), s) for s, r in svc.spurts().items() if s in mine and s not in INDEX_SYMBOLS and r["pct"]]
+        return [s for _, s in sorted(rows, reverse=True)[: cfg.fno_stocks_per_scan]]
+
+    def fno_scan(self, now: datetime, mood: str | None) -> bool:
+        st, cfg = self.state, self.cfg
+        svc = self.fno_service()
+        hist = st.data.setdefault("fno_hist", {})
+        views, errors = [], []
+        try:
+            symbols = [*cfg.fno_underlyings, *self.fno_stock_picks(svc)]
+        except FNO_ERRORS:
+            symbols = list(cfg.fno_underlyings)
+        vix = self.data.index_quote("INDIA VIX")
+        for sym in symbols:
+            try:
+                first = hist.get(sym, [None])[0]
+                prev_pcr = first[1] if first and (now - datetime.fromisoformat(first[0])) >= timedelta(minutes=20) else None
+                negative = tuple(i.title for i in news.symbol_news(sym, now) if news.is_negative(i)) \
+                    if sym not in INDEX_SYMBOLS else ()
+                outperf = None
+                if sym not in INDEX_SYMBOLS:
+                    h = self.history(sym, now.date())
+                    outperf = h["outperf"] if h else None
+                v = svc.view(sym, now, mood, vix.last, vix.pct, negative, prev_pcr, outperf)
+            except FNO_ERRORS as exc:
+                errors.append(f"{sym}: {exc}")
+                log.warning("F&O view failed for %s: %s", sym, exc)
+                continue
+            if v.stale:
+                errors.append(f"{sym}: option-chain data is not from the live session")
+                continue
+            hist.setdefault(sym, []).append([now.isoformat(), v.metrics["pcr_oi"]])
+            views.append(v)
+        if not views:
+            return False
+        today = now.date()
+        taken = sum(1 for i in st.data["ideas"].values() if i.get("kind") == "fno")
+        fresh = []
+        for v in views:
+            key = f"fno:{v.symbol}:{v.direction}"
+            if v.plan and key not in st.data["alerts"] and taken + len(fresh) < cfg.max_fno_ideas_per_day \
+                    and now.time() < time(14, 30):
+                st.data["alerts"].append(key)
+                fresh.append(v)
+        pulse = st.once("fno_pulse")
+        if not (fresh or pulse):
+            return False
+        sent = None
+        if fresh:
+            subject = "[NSE Desk] F&O idea: " + ", ".join(f"{v.symbol} {v.direction}" for v in fresh) + f" ({now:%d %b %H:%M})"
+            body = "\n\n" + ("=" * 60 + "\n\n").join(fno_render.render_view(v, now) for v in fresh)
+            sent = self.email(subject, body.lstrip())
+        else:
+            sent = self.email(f"[NSE Desk] F&O pulse ({now:%d %b %H:%M})", fno_render.render_pulse(views, errors, now))
+        for v in fresh:
+            lv, p = v.plan["levels"], v.plan
+            idea_id = f"{today}-FNO-{v.symbol}-{v.direction}"
+            st.data["ideas"][idea_id] = {
+                "id": idea_id, "kind": "fno", "symbol": v.symbol, "index_name": INDEX_SYMBOLS.get(v.symbol),
+                "structure": p["structure"], "side": "long" if lv["sg"] > 0 else "short", "entry": lv["trigger"],
+                "stop": lv["stop"], "target": lv["target"], "horizon": "intraday", "status": "pending", "msgid": sent,
+                "setup": "f&o " + p["structure"]}
+        return True
 
     # ---- news -------------------------------------------------------------------------------
     def news_cycle(self, now: datetime) -> bool:

@@ -8,7 +8,7 @@ from datetime import datetime
 
 def _blank(day: str) -> dict:
     return {"date": day, "emails": 0, "ideas": {}, "alerts": [], "done": [], "last": {}, "cache": {},
-            "context": {}, "thread": None}
+            "context": {}, "thread": None, "fno_hist": {}}
 
 
 class State:

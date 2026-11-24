@@ -32,6 +32,9 @@ jobs:
       RISK_PCT: ${{ secrets.RISK_PCT }}
       WATCHLIST: ${{ secrets.WATCHLIST }}
       HOLDINGS: ${{ secrets.HOLDINGS }}
+      # NSE's website endpoints often block cloud IPs, so F&O is off here by default. Set the repository
+      # variable FNO_ENABLED=1 to try it, or run the agent on your Mac or a home machine for F&O.
+      FNO_ENABLED: ${{ vars.FNO_ENABLED || '0' }}
       STATE_DIR: ${{ github.workspace }}/.nse_agent_state
     steps:
       - uses: actions/checkout@v4

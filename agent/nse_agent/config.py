@@ -63,6 +63,11 @@ class Config:
     dry_run: bool = False
     cm_url: str = "https://mcp.nseindia.in/cmmkt/mcp"
     bhav_url: str = "https://mcp.nseindia.in/bhavcopy/cm/mcp"
+    fno_enabled: bool = True
+    fno_interval_min: int = 20
+    fno_underlyings: tuple = ("NIFTY", "BANKNIFTY")
+    fno_stocks_per_scan: int = 3
+    max_fno_ideas_per_day: int = 4
 
     @classmethod
     def from_env(cls, env_file: str | None = None) -> "Config":
@@ -99,6 +104,11 @@ class Config:
             gemini_model=e("GEMINI_MODEL", "gemini-2.0-flash"),
             state_dir=e("STATE_DIR", ".nse_agent_state"),
             dry_run=e("DRY_RUN", "").lower() in ("1", "true", "yes"),
+            fno_enabled=e("FNO_ENABLED", "1").lower() in ("1", "true", "yes"),
+            fno_interval_min=int(e("FNO_INTERVAL_MIN", "20")),
+            fno_underlyings=tuple(_csv(e("FNO_UNDERLYINGS", "NIFTY,BANKNIFTY"))),
+            fno_stocks_per_scan=int(e("FNO_STOCKS_PER_SCAN", "3")),
+            max_fno_ideas_per_day=int(e("MAX_FNO_IDEAS_PER_DAY", "4")),
         )
 
     def can_email(self) -> bool:

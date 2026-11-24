@@ -69,6 +69,47 @@ in the Actions tab to stop it.
 
 Use only one of A, B or C at a time, otherwise you will get duplicate emails.
 
+## F&O desk: live futures and options
+
+The agent also reads **NIFTY and BANKNIFTY** (plus up to 3 F&O stocks from your watchlist and holdings whose
+open interest moves most) and gives a verdict with the reasoning attached. From 09:50 to 14:45, every 20 min
+(`FNO_INTERVAL_MIN`), it fetches the option chain, the futures and the OI changes, then:
+
+- scores **8 evidence nodes**: price trend, futures OI buildup (long or short buildup, covering, unwinding),
+  put-call ratio and its drift, position between the biggest put and call OI walls, fresh OI near the money,
+  max pain into expiry, futures premium, and the market tone, plus relative strength and negative news for
+  stocks. A call needs a weighted score of at least 30 of 100, at least 3 agreeing signals and no strong
+  opposing one. Otherwise the answer is **neutral** or **conflicted** and you get no trade.
+- builds a **defined-risk plan** only for a bullish or bearish call: a long option when options are cheap
+  against realised movement, a debit spread when fair, a credit spread when rich. It picks strikes and an
+  expiry with at least 2 days left, sets the stop and target from ATR and the OI walls, sizes lots so the loss
+  at the stop stays within `RISK_PCT` of `CAPITAL`, and rejects anything under 1.5 reward-to-risk after charges.
+  Futures are shown only as an alternative with a "fits your risk budget" flag. **It never suggests selling
+  naked options.**
+- emails the **F&O pulse** at the first scan of the day, then an **F&O idea** only when a plan passes, with
+  trigger, stop, target, strikes, lots, outlay, max loss, break-even, Greeks, key OI levels, an ASCII
+  **knowledge graph** (evidence, the verdict it feeds, the levels that set stop and target) and the reasons it
+  did not pick the other structures. Open ideas are tracked through the underlying like cash ideas.
+
+Ask it any time: email yourself `[NSE Ask] fno NIFTY` (or `fno BANKNIFTY`, `fno RELIANCE`), or run
+`python -m nse_agent fno NIFTY` in `agent/`. Claude can do the same through the `nse-fno` MCP server, which
+`.mcp.json` registers (tools `fno_view`, `fno_option_chain`, `fno_futures`, `fno_oi_spurts`; `fno_view` also
+returns the graph as JSON). Start it by hand with `python -m nse_agent.fno_mcp` from `agent/`.
+
+**Where the data comes from, honestly.** NSE's official MCP servers cover only the cash market. There is no
+free official F&O MCP: Zerodha's needs a paid Kite Connect app and a daily login, Dhan's live data needs its
+paid Data API, and Upstox's needs a daily login. So this reads the public JSON that the NSE website's
+option-chain page uses. It needs no account or key and costs nothing, but it is **unofficial**, delayed by a
+minute or so, for personal use, and NSE can change or block it. It often blocks cloud IPs, so run F&O on your
+Mac or a home machine; the GitHub Actions workflow keeps it off by default. If you later want an official free
+feed, Angel One SmartAPI is the best candidate (an account is needed); the `NseFno` class is the single place
+to swap.
+
+**What it cannot do.** It does not compute margin (check SPAN in your broker), see live bid-ask beyond the
+chain snapshot, or know about events after the data stamp. A stale chain (market closed, holiday) is never
+emailed. SEBI studies found roughly 9 in 10 individual F&O traders lose money; treat the output as a checklist
+that forces discipline, not a prediction. Start with paper trades.
+
 ## Settings
 
 All via `agent/.env` or environment variables. See [.env.example](../agent/.env.example) for the full list.
@@ -80,12 +121,18 @@ All via `agent/.env` or environment variables. See [.env.example](../agent/.env.
 | `HOLDINGS` | none | Stocks you own; you get risk alerts on sharp drops and 50-day SMA breaks |
 | `MAX_EMAILS_PER_DAY` | 15 | Hard cap |
 | `SCAN_INTERVAL_MIN` | 15 | How often to scan |
+| `FNO_ENABLED`, `FNO_INTERVAL_MIN` | 1, 20 | Turn the F&O desk off, or change how often it scans |
+| `FNO_UNDERLYINGS`, `MAX_FNO_IDEAS_PER_DAY` | NIFTY,BANKNIFTY, 4 | What it watches and the daily cap on F&O ideas |
 | `GEMINI_API_KEY` | none | Optional news summaries |
+
+Note that with the default 1% risk on 5 lakh (₹5,000), one NIFTY lot (65) usually cannot fit a stop-loss, so
+most days the F&O answer for a small account is "no trade, here is why". That is the risk rule working, not a
+bug. Raise `CAPITAL` and `RISK_PCT` only if you accept the larger loss.
 
 ## Limits you should know
 
-- NSE data is **delayed 1 to 5 minutes** and covers the **cash market only** (no futures, options or ticks).
-  Entries are triggers to verify in your broker, not instant fills.
+- Cash-market data is **delayed 1 to 5 minutes** (NSE's MCP) and F&O data about a minute or more (NSE's
+  website). Entries are triggers to verify in your broker, not instant fills.
 - NSE's MCP terms are informational and non-commercial. This is for your personal use.
 - Free RSS news is headline-level and can be wrong or late. The agent uses it to veto ideas and flag events,
   not to originate trades.
@@ -101,5 +148,9 @@ All via `agent/.env` or environment variables. See [.env.example](../agent/.env.
 | `agent/nse_agent/analysis.py` | Setup rules, trade plan, tape tone |
 | `agent/nse_agent/nse.py`, `mcp.py` | NSE MCP client and typed wrappers |
 | `agent/nse_agent/news.py`, `llm.py` | RSS news scoring and veto; optional Gemini summaries |
+| `agent/nse_agent/fno_data.py` | NSE website client: option chain, futures, OI spurts, lot sizes |
+| `agent/nse_agent/fno_analysis.py` | Greeks, OI metrics, evidence nodes, verdict, trade structuring, graph |
+| `agent/nse_agent/fno_service.py`, `fno_render.py` | Glue to the cash data, and the F&O email/report text |
+| `agent/nse_agent/fno_mcp.py` | `nse-fno` stdio MCP server for Claude |
 | `agent/nse_agent/notify.py`, `inbox.py` | Gmail send and `[NSE Ask]` replies |
-| `tests/test_nse_agent.py` | Offline tests with a fake NSE feed and fake mailer |
+| `tests/test_nse_agent.py`, `tests/test_fno.py` | Offline tests with fake NSE feeds and a fake mailer |

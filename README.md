@@ -55,6 +55,8 @@ The plugin registers NSE's two no-auth MCP servers (live cash-market quotes and 
 the `nse-live-desk` skill. To get scheduled trade ideas by email, see
 [docs/nse-live-desk-setup.md](docs/nse-live-desk-setup.md). To have an always-on agent that watches the
 market and news all day and emails you for free, without Claude, see [docs/nse-agent.md](docs/nse-agent.md).
+That guide also covers the **futures & options desk** (live option chain, OI and futures analysis with a
+buy/sell verdict, and a local `nse-fno` MCP server for Claude).
 
 **2. Optionally connect your broker** for live data:
 

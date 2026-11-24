@@ -1,4 +1,4 @@
-"""CLI: python -m nse_agent <run | once | check | test-email> [--dry-run] [--env-file PATH]"""
+"""CLI: python -m nse_agent <run | once | check | test-email | fno [SYMBOL]> [--dry-run] [--env-file PATH]"""
 import argparse
 import logging
 import sys
@@ -62,7 +62,8 @@ def check(agent: Agent) -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="nse_agent")
-    p.add_argument("command", choices=["run", "once", "check", "test-email"])
+    p.add_argument("command", choices=["run", "once", "check", "test-email", "fno"])
+    p.add_argument("symbol", nargs="?", default="NIFTY", help="underlying for the fno command")
     p.add_argument("--dry-run", action="store_true", help="print emails instead of sending")
     p.add_argument("--env-file")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -80,6 +81,14 @@ def main(argv=None) -> int:
         sent = agent.mailer.send("[NSE Desk] Test email", "If you can read this, Gmail delivery works.")
         print("sent" if sent else "NOT sent: set SMTP_USER, SMTP_APP_PASSWORD and EMAIL_TO in .env")
         return 0 if sent else 1
+    if args.command == "fno":
+        from .fno_render import render_view
+        try:
+            print(render_view(agent.fno_view(args.symbol, clock.now_ist()), clock.now_ist()))
+        except Exception as exc:  # noqa: BLE001  a CLI should print the reason, not a traceback
+            print(f"F&O view failed: {exc}")
+            return 1
+        return 0
     if args.command == "once":
         print(agent.tick())
         return 0

@@ -7,6 +7,7 @@ from email.header import decode_header, make_header
 from email.utils import parseaddr
 
 from . import news, render
+from .fno_data import FnoError
 from .nse import McpError
 
 log = logging.getLogger("nse_agent")
@@ -16,7 +17,8 @@ HELP = ("Commands (put them in the subject after [NSE Ask] or in the first line 
         "  index NIFTY BANK    live index (nifty, banknifty, vix are shortcuts)\n"
         "  movers              top gainers and losers now\n"
         "  ideas               today's ideas and their status\n"
-        "  news TCS            recent headlines (leave the symbol off for market news)\n")
+        "  news TCS            recent headlines (leave the symbol off for market news)\n"
+        "  fno NIFTY           full futures & options view with verdict and evidence (NIFTY, BANKNIFTY or a stock)\n")
 
 
 def _text(msg) -> str:
@@ -46,7 +48,7 @@ def answer(cmd: str, data, agent, now) -> str:
             q = data.index_quote(name)
             return (f"{q.name}: {q.last:,.2f} ({q.pct:+.2f}%), day range {q.low:,.2f} to {q.high:,.2f}, "
                     f"prev close {q.prev:,.2f}. NSE timestamp {q.ts}.")
-        if verb in ("price", "quote") or (len(words) == 1 and verb not in ("movers", "ideas", "news", "help")):
+        if verb in ("price", "quote") or (len(words) == 1 and verb not in ("movers", "ideas", "news", "help", "fno")):
             sym = (arg or verb.upper())
             q = data.stock_quote(sym)
             h = agent.history(sym, now.date())
@@ -67,12 +69,15 @@ def answer(cmd: str, data, agent, now) -> str:
             ideas = list(agent.state.data["ideas"].values())
             return "\n".join(f"{i['symbol']}: {i['status']} (entry {i['entry']}, stop {i['stop']}, target {i['target']})"
                              for i in ideas) or "No ideas today yet."
+        if verb == "fno":
+            from .fno_render import render_view
+            return render_view(agent.fno_view(arg or "NIFTY", now), now)
         if verb == "news":
             items = news.symbol_news(arg, now) if arg else news.fresh_relevant(
                 news.fetch_feeds(agent.cfg.news_feeds), set(), agent.symbols_of_interest(),
                 now.astimezone(timezone.utc), max_age_h=12, min_score=2)
             return "\n".join(f"- {i.title}" for i in items[:6]) or "No recent headlines found."
-    except (McpError, KeyError, TypeError, ValueError) as exc:
+    except (McpError, KeyError, TypeError, ValueError, FnoError) as exc:
         return f"Could not fetch that: {exc}"
     return HELP
 

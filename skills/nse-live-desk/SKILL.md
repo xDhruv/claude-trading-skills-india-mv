@@ -30,7 +30,10 @@ Consequences you must respect:
 1. **Live data is delayed** (refresh roughly every 1 minute for quotes and indices, 5 minutes for
    gainers/losers). Say "delayed" on every live price and quote the timestamp. Never call it real time.
 2. **Cash market only.** For NIFTY/BANKNIFTY options, OI, PCR or max pain say the NSE MCPs do not cover
-   it and use `fno-options-analysis` with data from a broker MCP or the user.
+   it. If the F&O MCP server from this plugin is connected (tools `fno_view`, `fno_option_chain`,
+   `fno_futures`, `fno_oi_spurts`), use it: it reads NSE's public website data, is unofficial and delayed, and
+   gives a verdict with a defined-risk plan and evidence graph; relay its caveats and never present its
+   output as advice. Otherwise use `fno-options-analysis` with data from a broker MCP or the user.
 3. **Outside 09:15 to 15:30 IST, Monday to Friday**, live data is stale. Check `cm_get_data_status`
    before quoting. On weekends and exchange holidays say the market is closed and use Bhavcopy.
 4. **Bhavcopy prices are unadjusted** for splits, bonuses and demergers. Before using % change or a
