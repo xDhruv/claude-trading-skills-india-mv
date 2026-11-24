@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Replace CHANGE_ME with your Mac username (two places per path), then:
+     cp com.xdhruv.nse-agent.plist ~/Library/LaunchAgents/
+     launchctl load ~/Library/LaunchAgents/com.xdhruv.nse-agent.plist
+     The agent only works while the Mac is awake, and needs Python 3.10+ (brew install python; on Intel Macs
+     change /opt/homebrew/bin/python3 to /usr/local/bin/python3). See docs/nse-agent.md. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.xdhruv.nse-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>/opt/homebrew/bin/python3</string>
+    <string>-m</string>
+    <string>nse_agent</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/CHANGE_ME/claude-trading-skills-india-mv/agent</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TZ</key><string>Asia/Kolkata</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/CHANGE_ME/claude-trading-skills-india-mv/agent/agent.log</string>
+  <key>StandardErrorPath</key><string>/Users/CHANGE_ME/claude-trading-skills-india-mv/agent/agent.log</string>
+</dict>
+</plist>

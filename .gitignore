@@ -9,6 +9,10 @@ venv/
 .env.*
 !.env.example
 
+# NSE agent runtime state
+.nse_agent_state*/
+agent/*.log
+
 # Private keys
 *.pem
 *.key

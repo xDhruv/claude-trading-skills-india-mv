@@ -1,0 +1,55 @@
+name: NSE agent (scheduled)
+
+# Runs the agent once every ~15 minutes during Indian market hours (09:00-16:00 IST, Mon-Fri).
+# Free for private repos within the 2,000 min/month allowance (about 550 min used).
+# GitHub cron is best-effort and can lag by several minutes; use the Mac daemon if you need tighter timing.
+# Needs repository secrets: SMTP_USER, SMTP_APP_PASSWORD, EMAIL_TO (optional: GEMINI_API_KEY, CAPITAL,
+# RISK_PCT, WATCHLIST, HOLDINGS).
+
+on:
+  schedule:
+    - cron: "*/15 3-10 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: nse-agent
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Kolkata
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      CAPITAL: ${{ secrets.CAPITAL }}
+      RISK_PCT: ${{ secrets.RISK_PCT }}
+      WATCHLIST: ${{ secrets.WATCHLIST }}
+      HOLDINGS: ${{ secrets.HOLDINGS }}
+      STATE_DIR: ${{ github.workspace }}/.nse_agent_state
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore agent state
+        uses: actions/cache/restore@v4
+        with:
+          path: .nse_agent_state
+          key: nse-agent-state-${{ github.run_id }}
+          restore-keys: nse-agent-state-
+      - name: Run one agent tick
+        working-directory: agent
+        run: python -m nse_agent once
+      - name: Save agent state
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .nse_agent_state
+          key: nse-agent-state-${{ github.run_id }}

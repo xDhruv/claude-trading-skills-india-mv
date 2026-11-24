@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0 — 2026-11-24
+
+- `agent/`: a standalone, stdlib-only Python agent that runs through market hours without Claude. It
+  watches NSE live data (CM Live + Bhavcopy MCPs) and free RSS news, applies the `nse-live-desk` rules in
+  deterministic code, and emails pre-open briefs, trade ideas with stop/target/size, live updates, market
+  and news alerts, a close wrap, and answers to `[NSE Ask]` emails, all through Gmail SMTP/IMAP with an
+  app password. Optional free Gemini key summarises headlines only. Runs on a Mac (launchd) or on GitHub
+  Actions cron at zero cost. Guide: `docs/nse-agent.md`.
+
 ## 1.4.0 — 2026-11-24
 
 - `nse-live-desk`: live NSE cash-market desk on NSE's official no-auth MCP servers (CM Market Live and

@@ -15,7 +15,8 @@ description: |
 Turns the pack into a live desk. Two read-only NSE MCP servers supply the data, the analysis skills turn
 it into a plan, and the Gmail connector delivers it. Setup steps are in `docs/nse-live-desk-setup.md`.
 Tool-by-tool notes are in `references/mcp-tools.md`. Email formats and scheduled prompts are in
-`references/email-digest.md`.
+`references/email-digest.md`. To run the same rules all day without Claude, the repo ships a free
+standalone agent: `docs/nse-agent.md`.
 
 ## What the data can and cannot do
 
