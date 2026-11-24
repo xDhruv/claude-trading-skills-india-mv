@@ -53,6 +53,8 @@ the specialised skill directly when the question is narrow (see the routing tabl
 
 1. **Connected broker MCP** (Groww, Zerodha Kite, Dhan, Upstox, Fyers, Kotak Neo). See
    `broker-integration` for which tool does what.
+1b. **NSE MCPs** (no login): delayed live cash-market quotes and 5 years of daily history. See
+   `nse-live-desk`. Use when no broker MCP is connected, or to confirm a broker quote. No F&O data.
 2. **yfinance** through the technical-analysis script: `../technical-analysis/scripts/ta.py summary --symbol RELIANCE` (needs
    `pip install yfinance`). NSE stocks map to `.NS`, BSE to `.BO`, indices to `^NSEI`, `^NSEBANK`,
    `^BSESN`, `^INDIAVIX`.
@@ -109,6 +111,7 @@ Scripts, relative to this skill's folder: `../technical-analysis/scripts/ta.py`,
 | User asks | Primary skill | Supporting |
 |---|---|---|
 | "Analyze INFY" / "should I buy X" | this skill | all as needed |
+| "Live price / what's moving / scan for a trade / email me ideas" | nse-live-desk | trading-discipline, position-sizing |
 | "How many shares / lots?" | position-sizing | stop-loss-strategies, trading-costs |
 | "Where do I put my stop?" | stop-loss-strategies | technical-analysis |
 | "Trail my stop on SBIN" | trailing-stops | position-sizing (`risk.py trail`) |

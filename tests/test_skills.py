@@ -27,7 +27,7 @@ def frontmatter(text: str) -> dict:
 
 class TestSkills(unittest.TestCase):
     def test_found_all(self):
-        self.assertEqual(len(SKILLS), 35)
+        self.assertEqual(len(SKILLS), 36)
 
     def test_frontmatter(self):
         for d in SKILLS:

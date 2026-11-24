@@ -6,11 +6,11 @@
 
 **Turn Claude into a Dalal Street analyst that gets the maths right.**
 
-35 skills · 22 tested calculators · NSE/BSE · NIFTY F&O · exact STT & charges · Indian tax · Groww / Zerodha / Dhan / Upstox
+36 skills · 22 tested calculators · NSE/BSE · live NSE data via MCP · emailed trade ideas · NIFTY F&O · exact STT & charges · Indian tax · Groww / Zerodha / Dhan / Upstox
 
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=claude&logoColor=white)](#quick-start)
-[![Skills](https://img.shields.io/badge/skills-35-2563EB)](#skills)
-[![Tests](https://github.com/Shubhamkumartrichy/claude-trading-skills-india/actions/workflows/tests.yml/badge.svg)](https://github.com/Shubhamkumartrichy/claude-trading-skills-india/actions/workflows/tests.yml)
+[![Skills](https://img.shields.io/badge/skills-36-2563EB)](#skills)
+[![Tests](https://github.com/xDhruv/claude-trading-skills-india-mv/actions/workflows/tests.yml/badge.svg)](https://github.com/xDhruv/claude-trading-skills-india-mv/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](#calculators)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-22C55E)](#calculators)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
@@ -47,9 +47,13 @@ maths instead of guessing. Some of what it knows that most tools get wrong:
 **1. Install** (inside Claude Code):
 
 ```
-/plugin marketplace add Shubhamkumartrichy/claude-trading-skills-india
+/plugin marketplace add xDhruv/claude-trading-skills-india-mv
 /plugin install india-trading-skills@india-trading-skills
 ```
+
+The plugin registers NSE's two no-auth MCP servers (live cash-market quotes and Bhavcopy history) for
+the `nse-live-desk` skill. To get scheduled trade ideas by email, see
+[docs/nse-live-desk-setup.md](docs/nse-live-desk-setup.md).
 
 **2. Optionally connect your broker** for live data:
 
@@ -73,15 +77,15 @@ are needed for anything else.
 **skills CLI**
 
 ```bash
-npx skills add Shubhamkumartrichy/claude-trading-skills-india
+npx skills add xDhruv/claude-trading-skills-india-mv
 ```
 
 **Manual (project-level symlinks)**
 
 ```bash
-git clone https://github.com/Shubhamkumartrichy/claude-trading-skills-india.git
+git clone https://github.com/xDhruv/claude-trading-skills-india-mv.git
 mkdir -p .claude/skills
-for d in claude-trading-skills-india/skills/*/; do ln -s "$(cd "$d" && pwd)" ".claude/skills/$(basename "$d")"; done
+for d in claude-trading-skills-india-mv/skills/*/; do ln -s "$(cd "$d" && pwd)" ".claude/skills/$(basename "$d")"; done
 ```
 
 Install the whole pack. Several skills call scripts that live in sibling skills (for example,
@@ -140,11 +144,12 @@ Real output from the bundled calculators. The RELIANCE dashboard uses NSE data f
 
 <a id="skills"></a>
 
-## 🧩 The 35 skills
+## 🧩 The 36 skills
 
 | Group | Skill | What it does |
 |---|---|---|
 | **Analyst** | `india-market-analyst` | Orchestrator: full analysis, routing, ground rules, output template |
+| | `nse-live-desk` | Live NSE quotes, movers and indices from NSE's official MCPs, trade-idea scans with stop/target/size, and scheduled Gmail digests and alerts |
 | | `market-pulse` | Pre-market and post-market brief: GIFT Nifty, FII/DII, VIX, breadth, sectors, regime |
 | **Market timing** | `market-regime` | NIFTY distribution days, follow-through days, top-risk score, exposure ceiling |
 | | `sector-rotation` | NSE sectoral indices vs NIFTY: relative strength, RRG quadrants, risk-on vs defensive tilt |

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 — 2026-11-24
+
+- `nse-live-desk`: live NSE cash-market desk on NSE's official no-auth MCP servers (CM Market Live and
+  Bhavcopy). Live quotes, indices and movers, a gated trade-idea scan (breakout, gap-and-hold,
+  pullback, washout watch, risk alerts) with stop, target, costs and sizing, and scheduled Gmail
+  digests, idea updates and `[NSE Ask]` inbox replies, restricted to the user's own address.
+- `.mcp.json` registers both NSE MCP servers with the plugin; setup guide in
+  `docs/nse-live-desk-setup.md`.
+- `india-market-analyst` routes live and scan questions to `nse-live-desk` (36 skills).
+
 ## 1.3.0 — 2026-11-13
 
 Six new skills, each with a standard-library calculator and tests (35 skills, 560 tests).

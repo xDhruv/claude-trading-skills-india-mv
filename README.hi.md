@@ -30,7 +30,7 @@ calculators से करवाता है। कुछ बातें जो
 **1. Install करें** (Claude Code के अंदर):
 
 ```
-/plugin marketplace add Shubhamkumartrichy/claude-trading-skills-india
+/plugin marketplace add xDhruv/claude-trading-skills-india-mv
 /plugin install india-trading-skills@india-trading-skills
 ```
 
