@@ -171,6 +171,7 @@ class ServiceAndEngineTests(unittest.TestCase):
         agent.cfg.capital = 4_000_000
         agent._fno_client = FakeFno()
         agent.fno_service().stats = lambda symbol, today: {"sma50": 23520.0, "atr": 372.0}
+        agent.fno_service().brain = lambda symbol, today, dte: {}  # the fake bars are a smooth uptrend, not a real chart
         return agent
 
     def test_scan_sends_one_idea_and_tracks_the_short_side(self):
@@ -230,7 +231,7 @@ class DataAndMcpTests(unittest.TestCase):
         self.assertEqual(init["result"]["serverInfo"]["name"], "nse-fno")
         self.assertIsNone(fno_mcp.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}, b))
         names = {t["name"] for t in fno_mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, b)["result"]["tools"]}
-        self.assertEqual(names, {"fno_view", "fno_option_chain", "fno_futures", "fno_oi_spurts"})
+        self.assertEqual(names, {"fno_view", "fno_option_chain", "fno_futures", "fno_oi_spurts", "fno_strategy_guide"})
         bad = fno_mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "place_order"}}, b)
         self.assertIn("error", bad)
 

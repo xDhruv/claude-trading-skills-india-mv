@@ -68,6 +68,7 @@ class Config:
     fno_stocks_per_scan: int = 3
     max_fno_ideas_per_day: int = 4
     fno_source: str = "auto"
+    fno_nondirectional: bool = True
     angel_api_key: str = field(default="", repr=False)
     angel_client_code: str = field(default="", repr=False)
     angel_pin: str = field(default="", repr=False)
@@ -118,6 +119,7 @@ class Config:
             fno_stocks_per_scan=int(e("FNO_STOCKS_PER_SCAN", "3")),
             max_fno_ideas_per_day=int(e("MAX_FNO_IDEAS_PER_DAY", "4")),
             fno_source=e("FNO_SOURCE", "auto").lower(),
+            fno_nondirectional=e("FNO_NONDIRECTIONAL", "1").lower() in ("1", "true", "yes"),
             angel_api_key=e("ANGEL_API_KEY", ""),
             angel_client_code=e("ANGEL_CLIENT_CODE", ""),
             angel_pin=e("ANGEL_PIN", ""),

@@ -1,6 +1,7 @@
 """Plain-text F&O reports: the full view with its evidence graph, and a short pulse across underlyings."""
 from datetime import date, datetime
 
+from .fno_patterns import analog_text
 from .render import inr, stamp
 
 FNO_WARNING = ("F&O is high risk: SEBI studies found roughly 9 in 10 individual traders lost money in it. Educational analysis "
@@ -37,8 +38,12 @@ def graph_text(view) -> str:
         lines.append(f"   └─ plan: {view.plan['structure']}")
         for n in ctx:
             lines.append(f"       ├─ chosen with: {n.label}: {n.value}")
-        lines.append(f"       ├─ stop {lv['stop']:,.2f} ({lv['stop_why']})")
-        lines.append(f"       └─ target {lv['target']:,.2f} ({lv['target_why']})")
+        if lv.get("sg"):
+            lines.append(f"       ├─ stop {lv['stop']:,.2f} ({lv['stop_why']})")
+            lines.append(f"       └─ target {lv['target']:,.2f} ({lv['target_why']})")
+        else:
+            lines.append(f"       ├─ lower level {lv['lower']:,.2f}")
+            lines.append(f"       └─ upper level {lv['upper']:,.2f} ({lv['stop_why']})")
     elif ctx:
         for n in ctx:
             lines.append(f"   · context: {n.label}: {n.value}")
@@ -64,7 +69,55 @@ def _exp(view) -> str:
     return date.fromisoformat(view.expiry).strftime("%d %b %Y")
 
 
+def _stats(p: dict) -> list[str]:
+    s = p.get("stats")
+    if not s:
+        return []
+    out = []
+    bes = ", ".join(f"{b:,.0f}" for b in s["breakevens"]) or "none"
+    mp = "unlimited" if s["max_profit_rs"] is None else f"₹{s['max_profit_rs']:,}"
+    ml = "unlimited" if s["max_loss_rs"] is None else f"₹{s['max_loss_rs']:,}"
+    out.append(f"  At expiry: max profit {mp}, max loss {ml}, break-even {bes}")
+    pops = []
+    if s.get("pop_market") is not None:
+        pops.append(f"{s['pop_market']:.0%} at today's option prices")
+    if s.get("pop_history") is not None:
+        pops.append(f"{s['pop_history']:.0%} on {s['ev_basis']}")
+    if pops:
+        out.append("  Chance of finishing profitable: " + "; ".join(pops))
+    if s.get("ev_rs") is not None:
+        out.append(f"  Expected value at expiry after charges ₹{s['ev_rs']:+,} ({s['ev_basis']}); a rough guide, the plan exits earlier")
+    return out
+
+
+def _plan_nd(view) -> list[str]:
+    p, lv = view.plan, view.plan["levels"]
+    out = [f"TRADE: {p['structure']}   ({'range: expects the market to stay inside' if p['kind'] == 'range' else 'breakout: expects a big move'})",
+           f"   (lot {view.lot}, {p['lots']} lot{'s' if p['lots'] > 1 else ''} = qty {p['qty']})"]
+    for leg in p["legs"]:
+        ratio = f"{leg['ratio']}x " if leg.get("ratio", 1) > 1 else ""
+        out.append(f"  {leg['action']:4} {ratio}{view.symbol} {_exp(view)} {leg['strike']:,.0f} {leg['kind']}  "
+                   f"price ₹{leg['ltp']:,.2f}, IV {leg['iv']:.1f}%")
+    if "net_credit" in p:
+        out.append(f"  Net credit ≈ ₹{p['net_credit']:.1f} per unit; max loss ₹{p['max_loss']:,}")
+    else:
+        out.append(f"  Net debit ≈ ₹{p['net_debit']:.1f} per unit; outlay ₹{p['outlay']:,} = your max loss")
+    out += [f"  Watch levels: {lv['lower']:,.2f} and {lv['upper']:,.2f} on the underlying",
+            f"  Stop: {lv['stop_why']}", f"  Target: {lv['target_why']}",
+            f"  If it goes wrong at the stop about ₹{p['risk_rs']:,}; planned gain ₹{p['reward_rs']:,}; reward:risk after charges {p['rr_net']}"]
+    out += _stats(p)
+    if p.get("theta_rs_day") is not None:
+        out.append(f"  Time decay {'earns' if p['theta_rs_day'] > 0 else 'costs'} about ₹{abs(p['theta_rs_day']):,}/day")
+    out += [f"  Why this structure: {p['reason']}",
+            "  Exit: at the stop or target, or at the latest 1 day before expiry. Do not average down."]
+    if p.get("chart"):
+        out += ["", "PAYOFF AT EXPIRY", p["chart"]]
+    return out
+
+
 def _plan(view) -> list[str]:
+    if view.plan.get("kind"):
+        return _plan_nd(view)
     p, lv = view.plan, view.plan["levels"]
     out = [f"TRADE: {p['structure']}   (lot {view.lot}, {p['lots']} lot{'s' if p['lots'] > 1 else ''} = qty {p['qty']})"]
     for leg in p["legs"]:
@@ -87,11 +140,66 @@ def _plan(view) -> list[str]:
     else:
         out.append(f"  If stopped ₹{p['risk_rs']:,}; if target ₹{p['reward_rs']:,}; reward:risk after charges {p['rr_net']}")
     out.append(f"  Break-even at expiry {p['breakeven']:,.1f}")
+    out += _stats(p)
     if p.get("theta_rs_day") is not None:
         out.append(f"  Position delta {p['delta']:+.2f} per unit, time decay "
                    f"{'earns' if p['theta_rs_day'] > 0 else 'costs'} about ₹{abs(p['theta_rs_day']):,}/day")
     out += [f"  Why this structure: {p['reason']}",
             "  Exit: at the stop or target, or with 1 day to expiry. Do not average down; do not hold through expiry."]
+    if p.get("chart"):
+        out += ["", "PAYOFF AT EXPIRY", p["chart"]]
+    return out
+
+
+def _brain(view) -> list[str]:
+    """Chart patterns, historical analogs, news and event risk: the evidence beyond the option chain."""
+    out = []
+    c = view.chart
+    if c and c.get("patterns"):
+        head = f"CHART PATTERNS (daily bars to {c.get('date', 'latest')}"
+        if c.get("rsi") is not None:
+            head += f"; trend {c.get('trend', 'n/a')}, RSI {c['rsi']:.0f}"
+        out += ["", head + ")"]
+        out += [f"  {p['name']}: {p['text']}" for p in c["patterns"]]
+        lv = []
+        if c.get("support"):
+            lv.append(f"swing support {c['support']:,.0f}")
+        if c.get("resistance"):
+            lv.append(f"swing resistance {c['resistance']:,.0f}")
+        if lv:
+            out.append("  " + ", ".join(lv))
+    a = view.analog
+    if a:
+        out += ["", "HISTORICAL ANALOGS (statistical memory, not a forecast)", f"  {analog_text(a)}",
+                f"  Closest matches: {', '.join(a['dates'])}",
+                f"  Small samples mislead: treat this as context, never as a reason to trade on its own."]
+    n, e = view.news, view.event
+    if n or (e and e.get("level")):
+        out += ["", "NEWS AND EVENTS"]
+        if n and n.get("lines"):
+            out += [f"  Tone {n['bias']:+.1f}: " + n["lines"][0]] + [f"  {x}" for x in n["lines"][1:]]
+        if e and e.get("level"):
+            out.append(f"  Event risk {'HIGH (today or tomorrow)' if e['level'] >= 2 else 'elevated (this week)'}: " + ", ".join(e["tags"]))
+            out += [f"    {x}" for x in e["lines"][:2]]
+    return out
+
+
+def _screen(view) -> list[str]:
+    if not view.screen:
+        return []
+    out = ["", "STRATEGIES CONSIDERED"]
+    for s in view.screen:
+        mode = f"[{s['mode']}] " if s.get("mode") else ""
+        out.append(f"  {s['status'].upper():13} {mode}{s['name']}: {s['why']}")
+    return out
+
+
+def _track(view) -> list[str]:
+    t = view.track
+    if not t:
+        return []
+    out = ["", f"YOUR TRACK RECORD: {t['n']} closed ideas, {t['hit']:.0%} reached target"]
+    out += [f"  {k}: {v['n']} closed, {v['hit']:.0%} hit" for k, v in sorted(t["by"].items())]
     return out
 
 
@@ -120,10 +228,11 @@ def render_view(view, now: datetime) -> str:
         verdict = {"neutral": "NO TRADE: the evidence is mixed.", "conflicted": "NO TRADE: the signals conflict."}.get(
             view.direction, "NO TRADE: a setup exists but nothing passes your risk rules.")
         out += [verdict] + [f"  - {n}" for n in view.notes] + _futures(view)
-    out += ["", "EVIDENCE (score x weight)"] + _evidence(view) + [""] + _levels(view.metrics)
+    out += ["", "EVIDENCE (score x weight)"] + _evidence(view) + _brain(view) + _screen(view) + [""] + _levels(view.metrics)
     ctx = [n for n in view.nodes if n.kind == "context"]
     if ctx:
         out += ["", "CONTEXT"] + [f"  {n.label}: {n.value}" for n in ctx]
+    out += _track(view)
     out += ["", "KNOWLEDGE GRAPH", graph_text(view), "", FNO_WARNING]
     return "\n".join(out)
 
@@ -144,6 +253,12 @@ def render_pulse(views: list, errors: list[str], now: datetime) -> str:
 
 
 def render_update(idea: dict, event: str, price: float, now: datetime) -> str:
+    if idea.get("mode"):
+        label = {"target": "BREAKOUT: the underlying moved enough, book profit",
+                 "stopped": "RANGE BROKEN: the underlying reached a short strike, close the position",
+                 "exit_reminder": "EXIT REMINDER: review the position before the close instead of carrying it blindly"}.get(event, event)
+        return (f"{idea['symbol']} {idea['structure']}: {label}\nUnderlying near {inr(price)} (watch levels {inr(idea['lower'])} "
+                f"and {inr(idea['upper'])}).\nAs of {stamp(now)}, delayed.")
     label = {"triggered": "TRIGGERED: the underlying reached the trigger", "target": "TARGET HIT: book profit",
              "stopped": "STOP HIT: close the position", "invalidated": "INVALIDATED before trigger",
              "expired": "EXPIRED", "exit_reminder": "EXIT REMINDER: the plan assumes about a one-day hold, so review "

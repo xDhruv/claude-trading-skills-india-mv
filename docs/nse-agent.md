@@ -49,12 +49,12 @@ instead of emailing stale prices.
 
 ## Run it for free: pick one
 
-**A. Your Mac (best timing).** Needs Python 3.10+ (`brew install python`). Edit the paths in
-`agent/launchd/com.xdhruv.nse-agent.plist`, copy it to `~/Library/LaunchAgents/` and run
-`launchctl load ~/Library/LaunchAgents/com.xdhruv.nse-agent.plist`. It starts at login, restarts if it
-crashes, uses `caffeinate` to stay awake while running, and logs to `agent/agent.log`. It sleeps outside
-market hours. It only works while the Mac is on and awake with the lid open (or on power with a display
-attached); if the Mac sleeps, it simply catches up on the next tick without re-sending.
+**A. Your Mac (best timing).** Needs Python 3.10+ (`brew install python`). Fill in `agent/.env`, then run
+`bash agent/mac/install.sh`. It installs a launchd job that starts at login, restarts if it crashes, uses
+`caffeinate` to stay awake while running, and logs to `agent/agent.log`. The full walkthrough, with a
+minute-by-minute day and every alert type, is in [nse-agent-mac.md](nse-agent-mac.md). It only works while
+the Mac is on and awake with the lid open (or on power with a display attached); if the Mac sleeps, it
+simply catches up on the next tick without re-sending.
 
 **B. GitHub Actions (no computer needed).** Push this repo (private is fine), then in Settings, Secrets and
 variables, Actions, add `SMTP_USER`, `SMTP_APP_PASSWORD`, `EMAIL_TO` and optionally `GEMINI_API_KEY`,
@@ -80,8 +80,10 @@ open interest moves most) and gives a verdict with the reasoning attached. From 
   max pain into expiry, futures premium, and the market tone, plus relative strength and negative news for
   stocks. A call needs a weighted score of at least 30 of 100, at least 3 agreeing signals and no strong
   opposing one. Otherwise the answer is **neutral** or **conflicted** and you get no trade.
-- builds a **defined-risk plan** only for a bullish or bearish call: a long option when options are cheap
-  against realised movement, a debit spread when fair, a credit spread when rich. It picks strikes and an
+- builds a **defined-risk plan**. A bullish or bearish call gets a long option when options are cheap
+  against realised movement, a debit spread when fair, a credit spread when rich. A neutral call can get a
+  range structure (iron condor or long butterfly) and a conflicted one a breakout structure (long straddle
+  or strangle), each only when the gates in the strategy brain below pass. It picks strikes and an
   expiry with at least 2 days left, sets the stop and target from ATR and the OI walls, sizes lots so the loss
   at the stop stays within `RISK_PCT` of `CAPITAL`, and rejects anything under 1.5 reward-to-risk after charges.
   Futures are shown only as an alternative with a "fits your risk budget" flag. **It never suggests selling
@@ -94,7 +96,48 @@ open interest moves most) and gives a verdict with the reasoning attached. From 
 Ask it any time: email yourself `[NSE Ask] fno NIFTY` (or `fno BANKNIFTY`, `fno RELIANCE`), or run
 `python -m nse_agent fno NIFTY` in `agent/`. Claude can do the same through the `nse-fno` MCP server, which
 `.mcp.json` registers (tools `fno_view`, `fno_option_chain`, `fno_futures`, `fno_oi_spurts`; `fno_view` also
-returns the graph as JSON). Start it by hand with `python -m nse_agent.fno_mcp` from `agent/`.
+returns the graph as JSON; `fno_strategy_guide` explains any strategy). Start it by hand with
+`python -m nse_agent.fno_mcp` from `agent/`.
+
+### The strategy brain
+
+On top of the option-chain evidence the desk reads three more things and weighs them in the same scoring:
+
+- **Chart patterns** from about 2 years of daily index or stock bars (paged from the free NSE history feed,
+  cached on disk for the day): higher highs and lows, 20-day breakouts and breakdowns, the 20/50/200-day
+  average stack, engulfing candles, RSI extremes, and a Bollinger-band **squeeze** (volatility compressed to
+  its lowest fifth, which warns of a bigger move). Chart bias counts at weight 1.25 to 1.5.
+- **Historical analogs**: it finds the past days whose trend, RSI, volatility and position in the range look
+  most like today (up to 24, spaced apart) and reports how often the market rose over the same number of
+  days to expiry, with the 10th and 90th percentile moves. Weight 0.75, and only when the edge is clear.
+  The same sample feeds the probability of profit and expected value of each structure.
+- **News and events**: fresh headlines (under 36 hours) give a small tone bias, and keyword rules flag
+  scheduled events (RBI policy, US Fed, Budget, elections, tariffs, results). A major event today or tomorrow
+  stops it selling premium and drops credit structures.
+
+It knows the **25 strategies from NSE's Nifty and Bank Nifty option strategies booklet** (long and short call
+and put, bull and bear spreads, straddles, strangles, butterflies, condors, collar, covered call, risk
+reversal, futures combinations, box). The explanations are written in this project's own words, not copied
+from the booklet. For each, the desk computes the payoff at expiry, break-evens, max profit and loss,
+probability of profit and expected value after charges, and draws an ASCII payoff chart in the email. Only
+defined-risk structures are ever suggested; short call, short put, short straddle and short strangle are
+listed as "not suggested" (unlimited risk) and box spreads and futures combinations as reference only. List
+or read any of them with `python -m nse_agent strategies` and `python -m nse_agent strategies iron_condor`.
+
+Rules for the two non-directional structures: **range** (neutral view) sells an iron condor, or buys a
+butterfly near expiry, only when implied volatility is at least 1.1 times realised, no squeeze is building
+and no big event is near. **Breakout** (conflicted view) buys a straddle or strangle only when the chart is
+squeezing or an event is near and options are not expensive (implied at most 1.0 times realised, 1.15 in a
+squeeze). Both need positive expected value after charges, and the breakout needs 1.5 reward to risk.
+Set `FNO_NONDIRECTIONAL=0` to allow directional ideas only.
+
+Every F&O idea that closes (target, stop, invalidated, expired) is written to `fno_journal.jsonl` in the state
+folder. With 8 or more closed ideas and a hit rate under 35%, the desk adds a caution and lowers its own
+confidence; the email shows the track record. This is a log of the agent's own calls, not a backtest.
+
+Be clear about the limits: about two years of one index is a small sample, analogs describe the past and are
+not a forecast, probability and expected value are computed to expiry while the plans usually exit earlier,
+and margin is not computed.
 
 **Where the data comes from, honestly.** NSE's official MCP servers cover only the cash market. There is no
 free official F&O MCP: Zerodha's needs a paid Kite Connect app and a daily login, Dhan's live data needs its
@@ -148,6 +191,7 @@ All via `agent/.env` or environment variables. See [.env.example](../agent/.env.
 | `FNO_ENABLED`, `FNO_INTERVAL_MIN` | 1, 20 | Turn the F&O desk off, or change how often it scans |
 | `FNO_UNDERLYINGS`, `MAX_FNO_IDEAS_PER_DAY` | NIFTY,BANKNIFTY, 4 | What it watches and the daily cap on F&O ideas |
 | `FNO_SOURCE` | auto | `auto` (Angel One if configured, else NSE website), `angel` (Angel One only) or `nse` |
+| `FNO_NONDIRECTIONAL` | 1 | Allow range (iron condor, butterfly) and breakout (straddle, strangle) ideas; 0 keeps directional only |
 | `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_PIN`, `ANGEL_TOTP_SECRET` | none | Angel One SmartAPI login for official F&O data |
 | `GEMINI_API_KEY` | none | Optional news summaries |
 
@@ -176,8 +220,12 @@ bug. Raise `CAPITAL` and `RISK_PCT` only if you accept the larger loss.
 | `agent/nse_agent/news.py`, `llm.py` | RSS news scoring and veto; optional Gemini summaries |
 | `agent/nse_agent/fno_data.py` | NSE website client: option chain, futures, OI spurts, lot sizes |
 | `agent/nse_agent/angel_data.py`, `fno_source.py` | Angel One SmartAPI client (TOTP login, chain, futures) and the source choice with NSE fallback |
-| `agent/nse_agent/fno_analysis.py` | Greeks, OI metrics, evidence nodes, verdict, trade structuring, graph |
+| `agent/nse_agent/fno_analysis.py` | OI metrics, evidence nodes, verdict, trade structuring, graph |
+| `agent/nse_agent/fno_pricing.py` | Black-Scholes price and Greeks |
+| `agent/nse_agent/fno_patterns.py`, `fno_news.py` | Chart patterns and historical analogs; headline tone and event risk |
+| `agent/nse_agent/fno_strategies.py` | Strategy catalogue, payoff maths and charts, range and breakout planner |
+| `agent/mac/install.sh` | One-command Mac installer (launchd) |
 | `agent/nse_agent/fno_service.py`, `fno_render.py` | Glue to the cash data, and the F&O email/report text |
 | `agent/nse_agent/fno_mcp.py` | `nse-fno` stdio MCP server for Claude |
 | `agent/nse_agent/notify.py`, `inbox.py` | Gmail send and `[NSE Ask]` replies |
-| `tests/test_nse_agent.py`, `tests/test_fno.py`, `tests/test_angel.py` | Offline tests with fake NSE and Angel One feeds and a fake mailer |
+| `tests/test_nse_agent.py`, `tests/test_fno.py`, `tests/test_angel.py`, `tests/test_brain.py` | Offline tests with fake NSE and Angel One feeds and a fake mailer |

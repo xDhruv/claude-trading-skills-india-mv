@@ -12,43 +12,12 @@ from datetime import datetime
 from .analysis import net_pnl
 from .clock import IST
 from .fno_data import Chain, Future, Leg
+from .fno_patterns import analog_text, chart_text
+from .fno_pricing import RATE, bs_price, greeks  # noqa: F401  (re-exported: tests and callers use fa.RATE, fa.bs_price)
+from .fno_strategies import enrich_plan, liquid, plan_nondirectional, size_lots
 
-RATE = 0.065
 HOLD_DAYS = 1.0
 MIN_DTE = 2.0
-
-
-# ---- Black-Scholes -------------------------------------------------------------------------------------
-def _cdf(x: float) -> float:
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
-
-
-def _pdf(x: float) -> float:
-    return math.exp(-x * x / 2) / math.sqrt(2 * math.pi)
-
-
-def bs_price(kind: str, s: float, k: float, t: float, iv_pct: float, r: float = RATE) -> float:
-    sig = iv_pct / 100
-    if t <= 0 or sig <= 0:
-        return max(s - k, 0.0) if kind == "C" else max(k - s, 0.0)
-    d1 = (math.log(s / k) + (r + sig * sig / 2) * t) / (sig * math.sqrt(t))
-    d2 = d1 - sig * math.sqrt(t)
-    if kind == "C":
-        return s * _cdf(d1) - k * math.exp(-r * t) * _cdf(d2)
-    return k * math.exp(-r * t) * _cdf(-d2) - s * _cdf(-d1)
-
-
-def greeks(kind: str, s: float, k: float, t: float, iv_pct: float, r: float = RATE) -> dict | None:
-    sig = iv_pct / 100
-    if t <= 0 or sig <= 0:
-        return None
-    d1 = (math.log(s / k) + (r + sig * sig / 2) * t) / (sig * math.sqrt(t))
-    d2 = d1 - sig * math.sqrt(t)
-    delta = _cdf(d1) if kind == "C" else _cdf(d1) - 1
-    decay = -(s * _pdf(d1) * sig) / (2 * math.sqrt(t))
-    carry = -r * k * math.exp(-r * t) * (_cdf(d2) if kind == "C" else -_cdf(-d2))
-    return {"delta": delta, "gamma": _pdf(d1) / (s * sig * math.sqrt(t)),
-            "theta_day": (decay + carry) / 365, "vega_pt": s * _pdf(d1) * math.sqrt(t) / 100}
 
 
 def reprice(kind: str, k: float, leg: Leg, s0: float, t0: float, s1: float, t1: float) -> float:
@@ -75,7 +44,15 @@ class Ctx:
     broker: str = "zerodha"
     prev_pcr: float | None = None
     spurt: dict | None = None
-
+    chart: dict | None = None  # fno_patterns.read_chart
+    analog: dict | None = None  # fno_patterns.analogs
+    rets: list | None = None  # analog returns scaled to the option's expiry
+    rv_ann: float | None = None  # realised volatility, annualised %
+    news_bias: float = 0.0
+    news_lines: tuple = ()
+    event: dict | None = None  # fno_news.event_risk
+    journal: dict | None = None  # {"n": closed ideas, "hit": hit rate}
+    allow_nd: bool = True  # allow range and breakout structures when there is no direction
 
 @dataclass
 class Node:
@@ -106,7 +83,12 @@ class View:
     stale: bool = False
     lot: int | None = None
     source: str = ""
-
+    screen: list = field(default_factory=list)  # strategies considered and why each was kept or dropped
+    chart: dict | None = None
+    analog: dict | None = None
+    event: dict | None = None
+    news: dict | None = None
+    track: dict | None = None
     def graph(self) -> dict:
         return build_graph(self)
 
@@ -248,7 +230,29 @@ def build_nodes(ch: Chain, m: dict, fut: Future | None, ctx: Ctx, now: datetime)
                           "Stocks that lead the index tend to keep leading"))
     if ctx.negative_news:
         nodes.append(Node("news", "News flow", ctx.negative_news[0][:80], -2.0, 1.0, "Negative headline on this underlying"))
-
+    elif abs(ctx.news_bias) >= 0.5:
+        nodes.append(Node("news", "Headline tone", ctx.news_lines[0] if ctx.news_lines else f"{ctx.news_bias:+.1f}", ctx.news_bias, 1.0,
+                          "Recent headlines weighted by age; positive and negative words are counted"))
+    ch_ = ctx.chart or {}
+    if ch_.get("patterns") and abs(ch_.get("bias", 0)) >= 0.25:
+        nodes.append(Node("chart", "Chart patterns", chart_text(ch_), ch_["bias"], 1.5 if abs(ch_["bias"]) >= 1.5 else 1.25,
+                          "Breakouts, swing structure, average stack, candles and RSI on daily bars"))
+    an = ctx.analog
+    if an and an.get("bias"):
+        nodes.append(Node("analog", "Historical analogs", analog_text(an), an["bias"], 0.75,
+                          "Statistical memory of similar past sessions: a small sample, not a forecast"))
+    ev_level = (ctx.event or {}).get("level", 0)
+    if ev_level:
+        nodes.append(Node("event", "Scheduled event risk", ", ".join(ctx.event["tags"]) + (" (today or tomorrow)" if ev_level >= 2 else " (this week)"),
+                          0, 0, "Binary events make a jump likely: no premium selling, and premium bought can lose to volatility falling afterwards", "context"))
+    if ch_.get("coiled"):
+        nodes.append(Node("squeeze", "Volatility squeeze", "range is unusually tight" + (f" (bandwidth in the lowest {ch_['bw_pct']:.0f}%)" if ch_.get("bw_pct") is not None else ""),
+                          0, 0, "A tight range tends to precede a larger move, direction unknown", "context"))
+    if ctx.rv_ann and m.get("atm_iv"):
+        r = m["atm_iv"] / ctx.rv_ann
+        nodes.append(Node("volregime", "Implied vs realised volatility", f"{m['atm_iv']:.1f}% vs {ctx.rv_ann:.1f}% (ratio {r:.2f}, "
+                          f"{'rich' if r >= 1.1 else 'cheap' if r <= 1.0 else 'fair'})", 0, 0,
+                          "Rich premium favours selling it with capped risk; cheap premium favours buying it", "context"))
     ivtxt = f"ATM IV {m['atm_iv']:.1f}%" if m["atm_iv"] else "ATM IV n/a"
     if m["iv_ratio"]:
         tag = "cheap" if m["iv_ratio"] <= 1.0 else "rich" if m["iv_ratio"] >= 1.35 else "fair"
@@ -291,11 +295,7 @@ def decide(nodes: list[Node], ctx: Ctx) -> tuple[str, float, str, list[str]]:
 
 # ---- trade structuring ----------------------------------------------------------------------------------
 def _liquid(leg: Leg | None, is_index: bool) -> bool:
-    if not leg or leg.ltp <= 0 or leg.iv <= 0:
-        return False
-    if leg.volume < (500 if is_index else 50):
-        return False
-    return not (leg.bid > 0 and leg.ask > 0 and (leg.ask - leg.bid) / leg.ask > 0.04)
+    return liquid(leg, is_index)
 
 
 def _levels(direction: str, spot: float, m: dict, a: float) -> tuple[dict | None, str | None]:
@@ -320,10 +320,7 @@ def _levels(direction: str, spot: float, m: dict, a: float) -> tuple[dict | None
 
 
 def _size(loss_lot: float, max_loss_lot: float, outlay_lot: float, ctx: Ctx) -> int:
-    budget = ctx.capital * ctx.risk_pct / 100
-    if loss_lot <= 0:
-        return 0
-    return int(min(budget // loss_lot, 3 * budget // max(max_loss_lot, 1e-9), 0.35 * ctx.capital // max(outlay_lot, 1e-9)))
+    return size_lots(loss_lot, max_loss_lot, outlay_lot, ctx.capital, ctx.risk_pct)
 
 
 def _plan_long(sg, ch, m, ctx, lv, lot, t0, t1) -> tuple[dict | None, str]:
@@ -475,7 +472,7 @@ def futures_alt(sg: int, fut: Future | None, lv: dict, lot: int | None, ctx: Ctx
 
 
 def make_plan(direction: str, ch: Chain, m: dict, fut: Future | None, ctx: Ctx, lot: int | None,
-              atr: float | None) -> tuple[dict | None, dict | None, list[str]]:
+              atr: float | None, event_level: int = 0) -> tuple[dict | None, dict | None, list[str]]:
     if not lot:
         return None, None, ["lot size unavailable"]
     if not atr:
@@ -490,6 +487,10 @@ def make_plan(direction: str, ch: Chain, m: dict, fut: Future | None, ctx: Ctx, 
     ratio = m["iv_ratio"]
     order = ["long", "debit"] if ratio and ratio <= 1.0 else ["credit", "debit"] if ratio and ratio >= 1.35 else ["debit", "long"]
     rejects, plan = [], None
+    if event_level >= 2:
+        if "credit" in order:
+            rejects.append("credit: a major event is due today or tomorrow, so premium is not sold into a possible jump")
+        order = [o for o in order if o != "credit"] or ["debit"]
     for name in order:
         res = {"long": lambda: _plan_long(sg, ch, m, ctx, lv, ctx.lot or lot, t0, t1),
                "debit": lambda: _plan_debit(sg, ch, m, ctx, lv, lot, t0, t1),
@@ -504,20 +505,43 @@ def make_plan(direction: str, ch: Chain, m: dict, fut: Future | None, ctx: Ctx, 
     if plan.get("stop_override"):
         plan["levels"]["stop"] = float(plan["stop_override"])
         plan["levels"]["stop_why"] = "the short strike: close the spread if the underlying reaches it"
-    return plan, futures_alt(sg, fut, lv, lot, ctx, ch.spot), []
+    return plan, futures_alt(sg, fut, lv, lot, ctx, ch.spot), rejects
 
 
 # ---- orchestration --------------------------------------------------------------------------------------
 def analyse(ch: Chain, fut: Future | None, ctx: Ctx, now: datetime) -> View:
     m = metrics(ch, now, ctx.atr)
+    m["rv_ann"] = ctx.rv_ann
+    m["iv_rv"] = m["atm_iv"] / ctx.rv_ann if m["atm_iv"] and ctx.rv_ann else None
     nodes = build_nodes(ch, m, fut, ctx, now)
     direction, score, conf, notes = decide(nodes, ctx)
+    j = ctx.journal or {}
+    if j.get("n", 0) >= 8 and j.get("hit", 1) < 0.35:
+        notes.append(f"caution: only {j['hit']:.0%} of your last {j['n']} F&O ideas reached their target")
+        conf = "medium" if conf == "high" else conf
     view = View(ctx.symbol, ch.spot, ch.expiry.isoformat(), m["dte"], ch.ts, direction, round(score, 1), conf,
-                nodes, m, notes=notes)
+                nodes, m, notes=notes, chart=ctx.chart, analog=ctx.analog, event=ctx.event,
+                news={"bias": ctx.news_bias, "lines": list(ctx.news_lines)} if ctx.news_lines or ctx.news_bias else None)
+    ev_level = (ctx.event or {}).get("level", 0)
     if direction in ("bullish", "bearish"):
-        view.plan, view.futures_alt, rejects = make_plan(direction, ch, m, fut, ctx, ctx.lot, ctx.atr)
+        view.plan, view.futures_alt, rejects = make_plan(direction, ch, m, fut, ctx, ctx.lot, ctx.atr, ev_level)
+        if view.plan:
+            enrich_plan(view.plan, ch.spot, m["dte"], m["atm_iv"], ctx.rets, ctx.rv_ann, ctx.lot or 0, ctx.broker)
+            view.screen = [{"name": r.split(":")[0], "status": "rejected", "why": r.split(": ", 1)[-1]} for r in rejects]
+        elif rejects:
+            view.notes += ["no trade passes your rules: " + "; ".join(rejects)]
+    elif ctx.allow_nd and ctx.lot and ctx.atr:
+        modes = ["range", "breakout"] if direction == "neutral" else ["breakout"]
+        squeeze = bool((ctx.chart or {}).get("squeeze"))
+        for mode in modes:
+            plan, screen = plan_nondirectional(mode, ch, m, ctx.lot, ctx.atr, ctx.capital, ctx.risk_pct, ctx.broker,
+                                               ctx.is_index, ctx.rets, ctx.rv_ann, squeeze, ev_level)
+            view.screen += [dict(s, mode=mode) for s in screen]
+            if plan:
+                view.plan = plan
+                break
         if not view.plan:
-            view.notes += ["no trade passes your rules: " + "; ".join(rejects)] if rejects else []
+            view.notes.append("no directional edge, and no range or breakout structure passes your rules")
     return view
 
 
@@ -542,13 +566,20 @@ def build_graph(v: View) -> dict:
             nodes.append({"id": key, "type": "level", "label": label, "value": f"{m[key]:,.0f}"})
     if v.plan:
         lv = v.plan["levels"]
-        nodes += [{"id": "structure", "type": "plan", "label": v.plan["structure"]},
-                  {"id": "stop", "type": "plan", "label": "Stop (underlying)", "value": f"{lv['stop']:,.2f}"},
-                  {"id": "target", "type": "plan", "label": "Target (underlying)", "value": f"{lv['target']:,.2f}"}]
+        nodes.append({"id": "structure", "type": "plan", "label": v.plan["structure"]})
         edges += ctx_edges + [{"from": "verdict", "to": "structure", "relation": "implies", "weight": 1}]
-        adverse, favour = ("put_wall", "call_wall") if lv["sg"] > 0 else ("call_wall", "put_wall")
-        if m.get(adverse):
-            edges.append({"from": adverse, "to": "stop", "relation": "sets", "weight": 1})
-        if m.get(favour):
-            edges.append({"from": favour, "to": "target", "relation": "caps", "weight": 1})
+        if lv.get("sg"):
+            nodes += [{"id": "stop", "type": "plan", "label": "Stop (underlying)", "value": f"{lv['stop']:,.2f}"},
+                      {"id": "target", "type": "plan", "label": "Target (underlying)", "value": f"{lv['target']:,.2f}"}]
+            adverse, favour = ("put_wall", "call_wall") if lv["sg"] > 0 else ("call_wall", "put_wall")
+            if m.get(adverse):
+                edges.append({"from": adverse, "to": "stop", "relation": "sets", "weight": 1})
+            if m.get(favour):
+                edges.append({"from": favour, "to": "target", "relation": "caps", "weight": 1})
+        else:
+            nodes += [{"id": "lower", "type": "plan", "label": "Lower level (underlying)", "value": f"{lv['lower']:,.2f}"},
+                      {"id": "upper", "type": "plan", "label": "Upper level (underlying)", "value": f"{lv['upper']:,.2f}"}]
+            for key, tgt in (("put_wall", "lower"), ("call_wall", "upper")):
+                if m.get(key):
+                    edges.append({"from": key, "to": tgt, "relation": "frames", "weight": 1})
     return {"nodes": nodes, "edges": edges}

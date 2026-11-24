@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 
 from . import clock
+from . import fno_strategies as fs
 from .config import Config
 from .fno_data import FnoError
 from .fno_render import render_view
@@ -35,6 +36,11 @@ TOOLS = [
     {"name": "fno_oi_spurts",
      "description": "Underlyings with the biggest open-interest change today (futures + options).",
      "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}}}},
+    {"name": "fno_strategy_guide",
+     "description": "Reference for the NSE option-strategy catalogue (long/short calls and puts, spreads, straddles, strangles, "
+                    "butterflies, condors, iron condor, box, collar and futures combinations). Without a name it lists them; with "
+                    "a name it gives the view, volatility preference, risk, a priced example, breakevens and an ASCII payoff chart.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "e.g. iron_condor, bull_call"}}}},
 ]
 
 
@@ -57,7 +63,9 @@ def _view(b: Backend, a: dict) -> str:
     if a.get("format") == "json":
         return json.dumps({"symbol": v.symbol, "direction": v.direction, "score": v.score, "confidence": v.confidence,
                            "stale": v.stale, "expiry": v.expiry, "plan": v.plan, "futures_alternative": v.futures_alt,
-                           "notes": v.notes, "metrics": v.metrics, "graph": v.graph()}, default=str, indent=1)
+                           "notes": v.notes, "metrics": v.metrics, "chart_reading": v.chart, "analogs": v.analog,
+                           "event_risk": v.event, "headline_tone": v.news, "strategies_considered": v.screen,
+                           "graph": v.graph()}, default=str, indent=1)
     return render_view(v, now)
 
 
@@ -91,7 +99,17 @@ def _spurts(b: Backend, a: dict) -> str:
     return "\n".join(f"{s}: OI {r['oi']:,.0f} ({r['pct']:+.1f}% / {r['change']:+,.0f})" for s, r in rows)
 
 
-HANDLERS = {"fno_view": _view, "fno_option_chain": _chain, "fno_futures": _futures, "fno_oi_spurts": _spurts}
+def _guide(b: Backend, a: dict) -> str:
+    name = str(a.get("name") or "").lower().replace("-", "_").replace(" ", "_")
+    if not name:
+        return fs.catalogue_text()
+    if name not in fs.CATALOGUE:
+        raise ValueError(f"unknown strategy {name}; choose from {', '.join(fs.CATALOGUE)}")
+    return fs.guide(name)
+
+
+HANDLERS = {"fno_view": _view, "fno_option_chain": _chain, "fno_futures": _futures, "fno_oi_spurts": _spurts,
+            "fno_strategy_guide": _guide}
 
 
 def handle(msg: dict, backend: Backend) -> dict | None:

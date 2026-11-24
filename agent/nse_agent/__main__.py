@@ -1,4 +1,4 @@
-"""CLI: python -m nse_agent <run | once | check | test-email | fno [SYMBOL]> [--dry-run] [--env-file PATH]"""
+"""CLI: python -m nse_agent <run | once | check | test-email | fno [SYMBOL] | strategies [NAME]> [--dry-run] [--env-file PATH]"""
 import argparse
 import logging
 import sys
@@ -62,12 +62,23 @@ def check(agent: Agent) -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="nse_agent")
-    p.add_argument("command", choices=["run", "once", "check", "test-email", "fno"])
-    p.add_argument("symbol", nargs="?", default="NIFTY", help="underlying for the fno command")
+    p.add_argument("command", choices=["run", "once", "check", "test-email", "fno", "strategies"])
+    p.add_argument("symbol", nargs="?", default=None, help="underlying for fno (default NIFTY), or a strategy name for strategies")
     p.add_argument("--dry-run", action="store_true", help="print emails instead of sending")
     p.add_argument("--env-file")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
+    if args.command == "strategies":
+        from . import fno_strategies as fs
+        name = (args.symbol or "").lower().replace("-", "_").replace(" ", "_")
+        if not name:
+            print(fs.catalogue_text())
+            return 0
+        if name not in fs.CATALOGUE:
+            print(f"Unknown strategy '{args.symbol}'. Choose one of: {', '.join(fs.CATALOGUE)}")
+            return 1
+        print(fs.guide(name))
+        return 0
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     cfg = Config.from_env(args.env_file)
@@ -84,7 +95,7 @@ def main(argv=None) -> int:
     if args.command == "fno":
         from .fno_render import render_view
         try:
-            print(render_view(agent.fno_view(args.symbol, clock.now_ist()), clock.now_ist()))
+            print(render_view(agent.fno_view(args.symbol or "NIFTY", clock.now_ist()), clock.now_ist()))
         except Exception as exc:  # noqa: BLE001  a CLI should print the reason, not a traceback
             print(f"F&O view failed: {exc}")
             return 1

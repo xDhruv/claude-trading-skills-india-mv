@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from . import analysis, clock, fno_render, llm, news, render
 from .fno_data import INDEX_SYMBOLS, FnoError, NseFno
-from .fno_service import FnoService
+from .fno_service import FnoService, journal_add
 from .fno_source import make_fno
 from .nse import Bar, NseData, McpError
 
@@ -270,6 +270,8 @@ class Agent:
             ev = self.advance(idea, price, now)
             if ev:
                 (fno_events if fno else events).append((idea, ev, price))
+                if fno and ev in ("target", "stopped", "invalidated", "expired"):
+                    journal_add(self.cfg.state_dir, idea, ev, price)
         sent = False
         if events:
             self.email(f"[NSE Desk] Update: {', '.join(sorted({i['symbol'] for i, _, _ in events}))}",
@@ -285,9 +287,19 @@ class Agent:
     @staticmethod
     def advance(idea: dict, price: float, now: datetime) -> str | None:
         """Move an idea through pending -> triggered -> target/stopped. Short ideas mirror the long logic."""
+        late = idea["horizon"] == "intraday" and now.time() >= time(15, 15)
+        if idea.get("mode"):  # range or breakout structure: watched between two levels
+            if idea["status"] != "triggered":
+                return None
+            if price >= idea["upper"] or price <= idea["lower"]:
+                idea["status"] = "stopped" if idea["mode"] == "range" else "target_hit"
+                return "stopped" if idea["mode"] == "range" else "target"
+            if late and not idea.get("reminded"):
+                idea["reminded"] = True
+                return "exit_reminder"
+            return None
         sign = -1 if idea.get("side") == "short" else 1
         price, entry, stop, target = (sign * v for v in (price, idea["entry"], idea["stop"], idea["target"]))
-        late = idea["horizon"] == "intraday" and now.time() >= time(15, 15)
         if idea["status"] == "pending":
             if price <= stop:
                 idea["status"] = "invalidated"
@@ -354,7 +366,7 @@ class Agent:
         taken = sum(1 for i in st.data["ideas"].values() if i.get("kind") == "fno")
         fresh = []
         for v in views:
-            key = f"fno:{v.symbol}:{v.direction}"
+            key = f"fno:{v.symbol}:{(v.plan or {}).get('kind') or v.direction}"
             if v.plan and key not in st.data["alerts"] and taken + len(fresh) < cfg.max_fno_ideas_per_day \
                     and now.time() < time(14, 30):
                 st.data["alerts"].append(key)
@@ -364,19 +376,23 @@ class Agent:
             return False
         sent = None
         if fresh:
-            subject = "[NSE Desk] F&O idea: " + ", ".join(f"{v.symbol} {v.direction}" for v in fresh) + f" ({now:%d %b %H:%M})"
+            subject = "[NSE Desk] F&O idea: " + ", ".join(f"{v.symbol} {v.plan.get('kind') or v.direction}" for v in fresh) + f" ({now:%d %b %H:%M})"
             body = "\n\n" + ("=" * 60 + "\n\n").join(fno_render.render_view(v, now) for v in fresh)
             sent = self.email(subject, body.lstrip())
         else:
             sent = self.email(f"[NSE Desk] F&O pulse ({now:%d %b %H:%M})", fno_render.render_pulse(views, errors, now))
         for v in fresh:
             lv, p = v.plan["levels"], v.plan
-            idea_id = f"{today}-FNO-{v.symbol}-{v.direction}"
-            st.data["ideas"][idea_id] = {
-                "id": idea_id, "kind": "fno", "symbol": v.symbol, "index_name": INDEX_SYMBOLS.get(v.symbol),
-                "structure": p["structure"], "side": "long" if lv["sg"] > 0 else "short", "entry": lv["trigger"],
-                "stop": lv["stop"], "target": lv["target"], "horizon": "intraday", "status": "pending", "msgid": sent,
-                "setup": "f&o " + p["structure"]}
+            idea_id = f"{today}-FNO-{v.symbol}-{p.get('kind') or v.direction}"
+            base = {"id": idea_id, "kind": "fno", "symbol": v.symbol, "index_name": INDEX_SYMBOLS.get(v.symbol),
+                    "structure": p["structure"], "horizon": "intraday", "msgid": sent, "setup": "f&o " + p["structure"]}
+            if lv.get("sg"):
+                st.data["ideas"][idea_id] = {**base, "side": "long" if lv["sg"] > 0 else "short", "entry": lv["trigger"],
+                                             "stop": lv["stop"], "target": lv["target"], "status": "pending"}
+            else:  # range or breakout structure: no entry trigger, watched between two levels
+                st.data["ideas"][idea_id] = {**base, "mode": p["kind"], "lower": lv["lower"], "upper": lv["upper"],
+                                             "side": "range", "entry": v.spot, "stop": lv["lower"], "target": lv["upper"],
+                                             "status": "triggered"}
         return True
 
     # ---- news -------------------------------------------------------------------------------

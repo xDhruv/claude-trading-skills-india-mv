@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.8.0 — 2026-11-24
+
+- Strategy brain for the F&O desk. It now reads chart patterns from about 2 years of daily bars (trend
+  structure, 20-day breakouts, average stack, engulfing candles, RSI, Bollinger squeeze), finds historical
+  analogs and reports how often similar setups rose or fell over the same days to expiry, scores fresh
+  headline tone, and flags scheduled events (RBI, Fed, Budget, elections, tariffs, results) that stop it
+  selling premium. New modules `fno_patterns.py`, `fno_news.py`, `fno_strategies.py`, `fno_pricing.py`.
+- The 25 strategies in NSE's Nifty and Bank Nifty option strategies booklet are modelled: payoff at expiry,
+  break-evens, max profit and loss, probability of profit and expected value after charges, and an ASCII
+  payoff chart in every plan. Neutral views can now yield an iron condor or long butterfly, and conflicted
+  views a long straddle or strangle, behind strict gates. Naked shorts are still never suggested.
+  `FNO_NONDIRECTIONAL=0` turns the new structures off. The booklet's ideas are explained in this project's
+  own words.
+- `python -m nse_agent strategies [NAME]` and the `fno_strategy_guide` MCP tool explain any strategy.
+- Closed F&O ideas are logged to `fno_journal.jsonl`; a poor track record lowers the desk's confidence.
+- Non-directional ideas are tracked with a lower and upper level, with a 15:15 exit reminder.
+- Mac: `bash agent/mac/install.sh` installs the launchd job, and `docs/nse-agent-mac.md` explains the day,
+  the alerts and keeping the Mac awake.
+
 ## 1.7.0 — 2026-11-24
 
 - Angel One SmartAPI as the F&O data source (`agent/nse_agent/angel_data.py`). Free with an Angel One
