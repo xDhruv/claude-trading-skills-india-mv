@@ -27,13 +27,24 @@ fi
 
 # 1. Python 3.10+ (the agent uses only the standard library, nothing to pip install)
 PY=""
-for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 python3.13 python3.12 python3.11 python3.10 python3; do
+for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /Library/Frameworks/Python.framework/Versions/Current/bin/python3 python3.13 python3.12 python3.11 python3.10 python3; do
   p="$(command -v "$c" 2>/dev/null || true)"
   [ -n "$p" ] || continue
   if "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then PY="$p"; break; fi
 done
-[ -n "$PY" ] || die "Python 3.10 or newer not found. Install it with: brew install python"
+[ -n "$PY" ] || die "Python 3.10 or newer not found. Install it from https://www.python.org/downloads/macos/ (or: brew install python)"
 say "Using $("$PY" --version) at $PY"
+
+# Python from python.org cannot verify HTTPS certificates until its certificate step has run once
+if ! "$PY" -c 'import urllib.request; urllib.request.urlopen("https://www.google.com", timeout=15)' >/dev/null 2>&1; then
+  for cert in /Applications/Python\ 3.*/Install\ Certificates.command; do
+    [ -f "$cert" ] || continue
+    say "Installing Python's HTTPS certificates ($cert)..."
+    bash "$cert" >/dev/null 2>&1 || true
+  done
+  "$PY" -c 'import urllib.request; urllib.request.urlopen("https://www.google.com", timeout=15)' >/dev/null 2>&1 \
+    || say "WARNING: Python could not make an HTTPS request. Check your internet, or double-click 'Install Certificates.command' in /Applications/Python 3.x."
+fi
 
 # 2. Settings file. Stop the first time so you can fill it in.
 if [ ! -f "$AGENT_DIR/.env" ]; then

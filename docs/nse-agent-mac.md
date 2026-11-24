@@ -6,7 +6,10 @@ decides and why is in [nse-agent.md](nse-agent.md). Cost: zero. Gmail, NSE's pub
 
 ## 1. One-time setup (about 15 minutes)
 
-1. **Python 3.10 or newer.** Check with `python3 --version`. If older or missing: `brew install python`.
+1. **Python 3.10 or newer.** Check with `python3 --version`. If older or missing, download the macOS installer
+   from <https://www.python.org/downloads/macos/> (works on Intel and Apple Silicon, no Homebrew needed;
+   pick 3.12), open it and click through. Then close and reopen Terminal. `brew install python` also works.
+   The installer script fixes Python's HTTPS certificates for the python.org build automatically.
    Nothing else to install; the agent uses only Python's standard library.
 2. **Get the code** (your private fork): `git clone https://github.com/xDhruv/claude-trading-skills-india-mv.git`
    (push the latest commits from your Windows machine first, or you will clone an older version).
