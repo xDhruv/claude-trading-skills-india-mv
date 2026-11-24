@@ -98,12 +98,36 @@ returns the graph as JSON). Start it by hand with `python -m nse_agent.fno_mcp` 
 
 **Where the data comes from, honestly.** NSE's official MCP servers cover only the cash market. There is no
 free official F&O MCP: Zerodha's needs a paid Kite Connect app and a daily login, Dhan's live data needs its
-paid Data API, and Upstox's needs a daily login. So this reads the public JSON that the NSE website's
-option-chain page uses. It needs no account or key and costs nothing, but it is **unofficial**, delayed by a
-minute or so, for personal use, and NSE can change or block it. It often blocks cloud IPs, so run F&O on your
-Mac or a home machine; the GitHub Actions workflow keeps it off by default. If you later want an official free
-feed, Angel One SmartAPI is the best candidate (an account is needed); the `NseFno` class is the single place
-to swap.
+paid Data API, and Upstox's needs a daily login. So there are two sources, chosen by `FNO_SOURCE`:
+
+1. **Angel One SmartAPI (official, recommended if you have an Angel One account).** Free. The agent logs in
+   by itself with your client code, MPIN and a TOTP it generates, so there is no daily manual login. It reads
+   live option-chain quotes with bid/ask, open interest, IV from Angel's Greeks and change in OI, and futures
+   OI buildup. It only calls market-data endpoints and never places orders.
+2. **NSE website (unofficial fallback, no account).** The public JSON behind NSE's option-chain page. It is
+   delayed by a minute or so, NSE can change or block it, and it often blocks cloud IPs.
+
+With `FNO_SOURCE=auto` (default) the agent uses Angel One when all four `ANGEL_*` values are set and falls back
+to the NSE website if an Angel call fails, logging a warning. Every report and email states which source
+produced the numbers.
+
+### Set up Angel One (one time, about 10 minutes)
+
+1. Log in at <https://smartapi.angelone.in>, open **My Apps** and create an app. Copy the **API key**.
+2. Enable TOTP at <https://smartapi.angelone.in/enable-totp>. Copy the **secret key** printed beside the QR
+   code (also add the QR to your authenticator app if you want codes on your phone).
+3. Put these in `agent/.env` (git-ignored; never commit or paste them in chat):
+   `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE` (your Angel One login ID), `ANGEL_PIN` (your 4-digit MPIN) and
+   `ANGEL_TOTP_SECRET`.
+4. During market hours run `python -m nse_agent fno NIFTY` in `agent/`. The header should read
+   **Angel One SmartAPI chain stamp**. If it says "NSE website", check the log for the Angel error.
+   After a failed login the agent waits 5 minutes before trying again so it cannot lock your account.
+
+This Angel One path was built from the official SDK and documentation and tested offline only. It has not been
+run against Angel One's live servers by the author, so treat step 4 as the real test. It also covers about 61
+strikes around the money, so PCR and OI totals differ slightly from NSE's full chain, and change in OI is fetched
+for the nearest 13 strikes only. Because it is an official API, it should also work from GitHub Actions: add the
+four values as repository secrets and F&O switches on there.
 
 **What it cannot do.** It does not compute margin (check SPAN in your broker), see live bid-ask beyond the
 chain snapshot, or know about events after the data stamp. A stale chain (market closed, holiday) is never
@@ -123,6 +147,8 @@ All via `agent/.env` or environment variables. See [.env.example](../agent/.env.
 | `SCAN_INTERVAL_MIN` | 15 | How often to scan |
 | `FNO_ENABLED`, `FNO_INTERVAL_MIN` | 1, 20 | Turn the F&O desk off, or change how often it scans |
 | `FNO_UNDERLYINGS`, `MAX_FNO_IDEAS_PER_DAY` | NIFTY,BANKNIFTY, 4 | What it watches and the daily cap on F&O ideas |
+| `FNO_SOURCE` | auto | `auto` (Angel One if configured, else NSE website), `angel` (Angel One only) or `nse` |
+| `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_PIN`, `ANGEL_TOTP_SECRET` | none | Angel One SmartAPI login for official F&O data |
 | `GEMINI_API_KEY` | none | Optional news summaries |
 
 Note that with the default 1% risk on 5 lakh (₹5,000), one NIFTY lot (65) usually cannot fit a stop-loss, so
@@ -131,8 +157,8 @@ bug. Raise `CAPITAL` and `RISK_PCT` only if you accept the larger loss.
 
 ## Limits you should know
 
-- Cash-market data is **delayed 1 to 5 minutes** (NSE's MCP) and F&O data about a minute or more (NSE's
-  website). Entries are triggers to verify in your broker, not instant fills.
+- Cash-market data is **delayed 1 to 5 minutes** (NSE's MCP) and F&O data can lag by a minute or more
+  (NSE's website, or Angel One's feed). Entries are triggers to verify in your broker, not instant fills.
 - NSE's MCP terms are informational and non-commercial. This is for your personal use.
 - Free RSS news is headline-level and can be wrong or late. The agent uses it to veto ideas and flag events,
   not to originate trades.
@@ -149,8 +175,9 @@ bug. Raise `CAPITAL` and `RISK_PCT` only if you accept the larger loss.
 | `agent/nse_agent/nse.py`, `mcp.py` | NSE MCP client and typed wrappers |
 | `agent/nse_agent/news.py`, `llm.py` | RSS news scoring and veto; optional Gemini summaries |
 | `agent/nse_agent/fno_data.py` | NSE website client: option chain, futures, OI spurts, lot sizes |
+| `agent/nse_agent/angel_data.py`, `fno_source.py` | Angel One SmartAPI client (TOTP login, chain, futures) and the source choice with NSE fallback |
 | `agent/nse_agent/fno_analysis.py` | Greeks, OI metrics, evidence nodes, verdict, trade structuring, graph |
 | `agent/nse_agent/fno_service.py`, `fno_render.py` | Glue to the cash data, and the F&O email/report text |
 | `agent/nse_agent/fno_mcp.py` | `nse-fno` stdio MCP server for Claude |
 | `agent/nse_agent/notify.py`, `inbox.py` | Gmail send and `[NSE Ask]` replies |
-| `tests/test_nse_agent.py`, `tests/test_fno.py` | Offline tests with fake NSE feeds and a fake mailer |
+| `tests/test_nse_agent.py`, `tests/test_fno.py`, `tests/test_angel.py` | Offline tests with fake NSE and Angel One feeds and a fake mailer |

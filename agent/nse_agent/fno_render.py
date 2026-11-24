@@ -4,8 +4,8 @@ from datetime import date, datetime
 from .render import inr, stamp
 
 FNO_WARNING = ("F&O is high risk: SEBI studies found roughly 9 in 10 individual traders lost money in it. Educational analysis "
-               "from delayed NSE data, not investment advice and not a SEBI-registered adviser. Margins are not computed: "
-               "check them, and the live bid-ask, in your broker. This agent never places orders.")
+               "from market data that can lag the live market, not investment advice and not a SEBI-registered adviser. "
+               "Margins are not computed: check them, and the live bid-ask, in your broker. This agent never places orders.")
 
 ARROW = {"bullish": "BULLISH", "bearish": "BEARISH", "neutral": "NEUTRAL", "conflicted": "CONFLICTED"}
 
@@ -108,12 +108,12 @@ def _futures(view) -> list[str]:
 def render_view(view, now: datetime) -> str:
     head = f"F&O VIEW: {view.symbol}   {ARROW.get(view.direction, view.direction)}   score {view.score:+.0f}/100   confidence {view.confidence}"
     out = [head,
-           f"As of {stamp(now)}; NSE chain stamp {view.ts:%d %b %H:%M}" if view.ts else f"As of {stamp(now)}",
+           f"As of {stamp(now)}; {view.source or 'NSE'} chain stamp {view.ts:%d %b %H:%M}" if view.ts else f"As of {stamp(now)}",
            f"Expiry {_exp(view)} ({view.metrics['dte']:.1f} days), spot {view.spot:,.2f}, lot size {view.lot or 'unknown'}.",
            ""]
     if view.stale:
-        out += ["WARNING: NSE's data is not from the current live session (market closed, holiday or stale). "
-                "Treat this as the last available snapshot, not a live signal.", ""]
+        out += [f"WARNING: {view.source or 'NSE'}'s data is not from the current live session (market closed, holiday or "
+                "stale). Treat this as the last available snapshot, not a live signal.", ""]
     if view.plan:
         out += _plan(view) + _futures(view)
     else:

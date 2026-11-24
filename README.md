@@ -56,7 +56,8 @@ the `nse-live-desk` skill. To get scheduled trade ideas by email, see
 [docs/nse-live-desk-setup.md](docs/nse-live-desk-setup.md). To have an always-on agent that watches the
 market and news all day and emails you for free, without Claude, see [docs/nse-agent.md](docs/nse-agent.md).
 That guide also covers the **futures & options desk** (live option chain, OI and futures analysis with a
-buy/sell verdict, and a local `nse-fno` MCP server for Claude).
+buy/sell verdict, and a local `nse-fno` MCP server for Claude). F&O data comes from your free Angel One
+SmartAPI when configured, with NSE's website as the fallback.
 
 **2. Optionally connect your broker** for live data:
 

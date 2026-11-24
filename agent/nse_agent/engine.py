@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from . import analysis, clock, fno_render, llm, news, render
 from .fno_data import INDEX_SYMBOLS, FnoError, NseFno
 from .fno_service import FnoService
+from .fno_source import make_fno
 from .nse import Bar, NseData, McpError
 
 log = logging.getLogger("nse_agent")
@@ -19,7 +20,7 @@ class Agent:
 
     def fno_service(self) -> FnoService:
         if self._fno_service is None:
-            self._fno_client = self._fno_client or NseFno()
+            self._fno_client = self._fno_client or make_fno(self.cfg)
             self._fno_service = FnoService(self.cfg, self._fno_client, self.data)
         return self._fno_service
 

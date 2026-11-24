@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.7.0 — 2026-11-24
+
+- Angel One SmartAPI as the F&O data source (`agent/nse_agent/angel_data.py`). Free with an Angel One
+  account, official, and not limited to NSE's website: live option-chain quotes with bid/ask, open
+  interest, IV from Angel's Greeks (solved from price if missing), change in OI against the previous
+  session, futures and OI buildup. Set `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_PIN` and
+  `ANGEL_TOTP_SECRET` in `agent/.env`; `FNO_SOURCE=auto` (default) then uses Angel One and falls back to
+  the NSE website if a call fails. Reports and emails say which source produced the numbers.
+- Read-only: only market-data endpoints are called, never orders. Secrets stay out of config repr and logs.
+- GitHub Actions: with the `ANGEL_*` secrets set, F&O switches on there (official API, not IP-blocked).
+- Not exercised against Angel One's live servers in this release (needs your credentials); the
+  instrument list, parsing, login, token refresh and fallbacks are covered by offline tests.
+
 ## 1.6.0 — 2026-11-24
 
 - Futures & options desk for the agent and for Claude. `agent/nse_agent/fno_*`: live option chains,

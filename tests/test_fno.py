@@ -51,7 +51,7 @@ class FakeFno:
     def chain(self, symbol, expiry):
         return self._chain
 
-    def futures(self):
+    def futures(self, symbols=None):
         return {"NIFTY": [future()]}
 
     def oi_spurts(self):

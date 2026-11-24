@@ -47,6 +47,7 @@ class Chain:
     spot: float
     ts: datetime | None
     rows: list  # [(strike, Leg | None, Leg | None)] sorted by strike
+    source: str = "NSE website"
 
 
 @dataclass
@@ -166,8 +167,8 @@ class NseFno:
         rows.sort(key=lambda x: x[0])
         return Chain(symbol, expiry, _f(rec.get("underlyingValue")), parse_nse_ts(rec.get("timestamp")), rows)
 
-    def futures(self) -> dict[str, list[Future]]:
-        """Futures by underlying. The stock-futures feed only lists the most active contracts."""
+    def futures(self, symbols=None) -> dict[str, list[Future]]:
+        """Futures by underlying. The stock-futures feed only lists the most active contracts (symbols is ignored)."""
         if self._fut_cache and time.time() - self._fut_cache[0] < 120:
             return self._fut_cache[1]
         out: dict[str, list[Future]] = {}

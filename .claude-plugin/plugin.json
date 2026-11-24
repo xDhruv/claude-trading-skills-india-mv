@@ -1,6 +1,6 @@
 {
   "name": "india-trading-skills",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "36 Claude skills for Indian markets (NSE/BSE): live NSE data and emailed trade ideas through NSE's official MCP servers, technical analysis, market regime, macro regime, valuation and froth, breadth, sector rotation, FII/DII flows, event calendar, stock screens, momentum and exhaustion scans, VCP breakouts, results reactions, F&O and option chains, pair trading, backtesting, position sizing, stops, trading discipline, thesis tracking, portfolio review, exact trading charges, Indian tax, IPOs, fundamentals and broker MCP integration (Groww, Zerodha, Dhan, Upstox). Ships tested, zero-dependency Python calculators.",
   "author": {
     "name": "Shubham Kumar"

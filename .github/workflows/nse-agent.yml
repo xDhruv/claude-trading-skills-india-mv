@@ -32,9 +32,13 @@ jobs:
       RISK_PCT: ${{ secrets.RISK_PCT }}
       WATCHLIST: ${{ secrets.WATCHLIST }}
       HOLDINGS: ${{ secrets.HOLDINGS }}
-      # NSE's website endpoints often block cloud IPs, so F&O is off here by default. Set the repository
-      # variable FNO_ENABLED=1 to try it, or run the agent on your Mac or a home machine for F&O.
-      FNO_ENABLED: ${{ vars.FNO_ENABLED || '0' }}
+      # F&O runs on Angel One's official API when its secrets are set (works from GitHub's servers). Without
+      # them it falls back to NSE's website endpoints, which often block cloud IPs, so it stays off.
+      ANGEL_API_KEY: ${{ secrets.ANGEL_API_KEY }}
+      ANGEL_CLIENT_CODE: ${{ secrets.ANGEL_CLIENT_CODE }}
+      ANGEL_PIN: ${{ secrets.ANGEL_PIN }}
+      ANGEL_TOTP_SECRET: ${{ secrets.ANGEL_TOTP_SECRET }}
+      FNO_ENABLED: ${{ vars.FNO_ENABLED || (secrets.ANGEL_API_KEY != '' && '1' || '0') }}
       STATE_DIR: ${{ github.workspace }}/.nse_agent_state
     steps:
       - uses: actions/checkout@v4

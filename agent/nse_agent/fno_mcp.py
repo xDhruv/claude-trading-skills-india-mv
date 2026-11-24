@@ -9,9 +9,10 @@ from datetime import datetime
 
 from . import clock
 from .config import Config
-from .fno_data import FnoError, NseFno
+from .fno_data import FnoError
 from .fno_render import render_view
 from .fno_service import FnoService
+from .fno_source import make_fno
 from .mcp import McpClient, McpError
 from .nse import NseData
 
@@ -40,7 +41,7 @@ TOOLS = [
 class Backend:
     def __init__(self, cfg: Config | None = None):
         self.cfg = cfg or Config.from_env()
-        self.fno = NseFno()
+        self.fno = make_fno(self.cfg)
         self.data = NseData(McpClient(self.cfg.cm_url), McpClient(self.cfg.bhav_url))
         self.service = FnoService(self.cfg, self.fno, self.data)
 
@@ -68,7 +69,7 @@ def _chain(b: Backend, a: dict) -> str:
     ks = [k for k, _, _ in ch.rows]
     atm = min(ks, key=lambda k: abs(k - ch.spot))
     i = ks.index(atm)
-    out = [f"{sym} {ch.expiry:%d %b %Y} spot {ch.spot:,.2f} (NSE stamp {ch.ts})",
+    out = [f"{sym} {ch.expiry:%d %b %Y} spot {ch.spot:,.2f} ({ch.source} stamp {ch.ts})",
            "strike | CE ltp  oi  d_oi  iv  vol | PE ltp  oi  d_oi  iv  vol"]
     fmt = lambda x: "-" if x is None else f"{x.ltp:.2f} {x.oi:,.0f} {x.doi:+,.0f} {x.iv:.1f} {x.volume:,.0f}"  # noqa: E731
     for k, c, p in ch.rows[max(0, i - n): i + n + 1]:
@@ -79,7 +80,7 @@ def _chain(b: Backend, a: dict) -> str:
 def _futures(b: Backend, a: dict) -> str:
     sym = str(a.get("symbol") or "").upper()
     today = clock.now_ist().date()
-    futs = {s: [f for f in lst if f.expiry >= today] for s, lst in b.fno.futures().items()}
+    futs = {s: [f for f in lst if f.expiry >= today] for s, lst in b.fno.futures([sym] if sym else None).items()}
     rows = futs.get(sym, []) if sym else [f for lst in futs.values() for f in lst[:1]]
     return "\n".join(f"{f.symbol} {f.expiry:%d %b %Y}: {f.ltp:,.2f} ({f.pct:+.2f}%), OI {f.oi:,.0f}, volume {f.volume:,.0f}, "
                      f"spot {f.spot:,.2f}" for f in rows) or "No futures found for that symbol."

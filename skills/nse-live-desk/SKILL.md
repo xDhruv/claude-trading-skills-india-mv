@@ -31,7 +31,8 @@ Consequences you must respect:
    gainers/losers). Say "delayed" on every live price and quote the timestamp. Never call it real time.
 2. **Cash market only.** For NIFTY/BANKNIFTY options, OI, PCR or max pain say the NSE MCPs do not cover
    it. If the F&O MCP server from this plugin is connected (tools `fno_view`, `fno_option_chain`,
-   `fno_futures`, `fno_oi_spurts`), use it: it reads NSE's public website data, is unofficial and delayed, and
+   `fno_futures`, `fno_oi_spurts`), use it: it reads Angel One SmartAPI when the user has configured it, else
+      NSE's public website data (unofficial); either can lag, so quote the source and stamp it prints. It
    gives a verdict with a defined-risk plan and evidence graph; relay its caveats and never present its
    output as advice. Otherwise use `fno-options-analysis` with data from a broker MCP or the user.
 3. **Outside 09:15 to 15:30 IST, Monday to Friday**, live data is stale. Check `cm_get_data_status`

@@ -105,6 +105,7 @@ class View:
     notes: list = field(default_factory=list)  # why no trade, caveats
     stale: bool = False
     lot: int | None = None
+    source: str = ""
 
     def graph(self) -> dict:
         return build_graph(self)

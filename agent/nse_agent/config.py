@@ -1,8 +1,7 @@
 """Settings from environment variables and an optional .env file (stdlib only)."""
 import os
 import pathlib
-from dataclasses import dataclass
-
+from dataclasses import dataclass, field
 DEFAULT_WATCHLIST = (
     "RELIANCE,TCS,HDFCBANK,ICICIBANK,INFY,SBIN,BHARTIARTL,ITC,LT,AXISBANK,KOTAKBANK,MARUTI,SUNPHARMA,"
     "TATASTEEL,M&M,BAJFINANCE,HCLTECH,NTPC,POWERGRID,ONGC,ADANIPORTS,TITAN,ULTRACEMCO,COALINDIA,JSWSTEEL"
@@ -68,6 +67,15 @@ class Config:
     fno_underlyings: tuple = ("NIFTY", "BANKNIFTY")
     fno_stocks_per_scan: int = 3
     max_fno_ideas_per_day: int = 4
+    fno_source: str = "auto"
+    angel_api_key: str = field(default="", repr=False)
+    angel_client_code: str = field(default="", repr=False)
+    angel_pin: str = field(default="", repr=False)
+    angel_totp_secret: str = field(default="", repr=False)
+
+    @property
+    def angel_ready(self) -> bool:
+        return all((self.angel_api_key, self.angel_client_code, self.angel_pin, self.angel_totp_secret))
 
     @classmethod
     def from_env(cls, env_file: str | None = None) -> "Config":
@@ -109,6 +117,11 @@ class Config:
             fno_underlyings=tuple(_csv(e("FNO_UNDERLYINGS", "NIFTY,BANKNIFTY"))),
             fno_stocks_per_scan=int(e("FNO_STOCKS_PER_SCAN", "3")),
             max_fno_ideas_per_day=int(e("MAX_FNO_IDEAS_PER_DAY", "4")),
+            fno_source=e("FNO_SOURCE", "auto").lower(),
+            angel_api_key=e("ANGEL_API_KEY", ""),
+            angel_client_code=e("ANGEL_CLIENT_CODE", ""),
+            angel_pin=e("ANGEL_PIN", ""),
+            angel_totp_secret=e("ANGEL_TOTP_SECRET", ""),
         )
 
     def can_email(self) -> bool:

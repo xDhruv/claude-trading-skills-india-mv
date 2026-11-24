@@ -52,7 +52,7 @@ class FnoService:
             day_pct = self.data.index_quote(INDEX_SYMBOLS[symbol]).pct
         else:
             day_pct = self.data.stock_quote(symbol).pct
-        futs = [f for f in self.fno.futures().get(symbol, []) if (f.expiry - now.date()).days >= MIN_DTE]
+        futs = [f for f in self.fno.futures([symbol]).get(symbol, []) if (f.expiry - now.date()).days >= MIN_DTE]
         st = self.stats(symbol, now.date())
         ctx = Ctx(symbol, symbol in INDEX_SYMBOLS, day_pct, st["sma50"], st["atr"], tone, vix, vix_pct, outperf,
                   tuple(negative_news), self.fno.lot_size(symbol, now.date()), self.cfg.capital, self.cfg.risk_pct,
@@ -60,4 +60,5 @@ class FnoService:
         view = analyse(ch, futs[0] if futs else None, ctx, now)
         view.stale = not (ch.ts and ch.ts.date() == now.date() and now - ch.ts <= timedelta(minutes=25))
         view.lot = ctx.lot
+        view.source = ch.source
         return view
